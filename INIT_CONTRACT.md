@@ -11,7 +11,7 @@
 - 完整验证：`make check`（fmt / clippy / test / typecheck）
 - 启动当前脚手架：`cargo run --locked --offline`（仅输出状态；没有常驻 dev server）
 
-缺少 Rust 时，先按 `make init` 的错误提示安装工具链；`make setup` 不安装系统级 Rust。产品需求/设计仍待 T02 提升为正式文档，在此之前不要开始业务功能。
+缺少 Rust 时，先按 `make init` 的错误提示安装工具链；`make setup` 不安装系统级 Rust。产品需求/设计的生效入口见 `docs/index.md`；启动业务任务前先按 `TASKS.md` 确认单一 active 项。
 
 ## 当前状态
 

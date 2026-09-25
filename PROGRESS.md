@@ -14,11 +14,11 @@
 
 ## 当前目标
 
-- T01、T03 已经独立验收；当前执行 `TASKS.md` T02，整理首版正式需求/设计文档。
+- T01、T03 已经独立验收；当前执行 `TASKS.md` T02，正式文档已整理，待文档验收。
 
 ## 相关文档
 
-- 生效依据：`docs/official/rules/graphify-workflow.md`
+- 生效依据：`docs/index.md` 所列的首版需求、架构、手势识别规格和 Graphify 规则
 - 草稿/方案：`docs/drafts/2026-09-25-strokelet-demo-design.md`、`docs/drafts/2026-09-25-strokelet-demo-plan.md`（非生效版本）
 - 重要决策：DECISIONS.md
 - 图谱导航：graphify-out/GRAPH_REPORT.md（若存在）
@@ -39,20 +39,20 @@
 ## 已知问题
 
 - `make setup` 只在当前机器验证；全新机器预装 Rust 的步骤尚未验证。
-- 首版产品设计仍在草稿区，还不是开发依据。
+- 业务代码尚未启动；首版需求、设计和识别规格已进入 `docs/official/`，待 T02 验收。
 
 ## 阻塞项
 
 | 阻塞项 | 原因 | 需要谁处理 | 下一步 |
 |---|---|---|---|
 | 全新机器初始化未验证 | 尚无干净机器验证 Rust 安装前提 | 后续维护者 | 具备全新环境时运行 `make init`、`make setup`、`make check` |
-| 无生效需求/设计文档 | 仅有 drafts | 后续文档会话 | 启动 T02，提升正式文档 |
+| 首版文档待验收 | requirements/design/specs 已写入 official | 当前任务 evaluator | 检查 Frontmatter、索引、台账与内容一致性 |
 
 ## 下一步
 
 1. 新会话先读 AGENTS.md、docs/index.md、INIT_CONTRACT.md、TASKS.md、本文件与 DECISIONS.md。
-2. 完成 T02 的正式文档、索引与变更台账，并验证 Frontmatter。
-3. T02 独立验收后，再按正式需求拆分业务任务；未拿到完成证据前不要并行开工。
+2. 独立验收 T02 的正式文档、索引与变更台账。
+3. T02 验收后，再按正式需求拆分业务任务；未拿到完成证据前不要并行开工。
 
 ## 最近验证结果
 
@@ -65,6 +65,8 @@
 | 2026-09-25 | `make setup`；`make init && make test && make check` | 通过 | 当前机器；1 个具名测试，fmt / clippy / typecheck 成功 |
 | 2026-09-25 | `HOME=/tmp/strokelet-missing-rust PATH=/usr/bin:/bin make init` | 按预期失败 | 明确提示缺少 rustc 和安装入口 |
 | 2026-09-25 | 独立评估：`make init`、`make setup`、`make test`、`make check` | 通过 | T03：1 个具名测试；缺 Rust 提示有效；全新机器未实测 |
+| 2026-09-25 | `gnome-shell --version`、`lsb_release -ds`、`echo "$XDG_SESSION_TYPE"` | 通过 | GNOME Shell 50.1、Ubuntu 26.04.1 LTS、Wayland；仅环境事实，不代表功能验收 |
+| 2026-09-25 | `python3` + PyYAML 校验 official Frontmatter/topic/index/CHANGELOG/链接；`make check` | 通过 | 4 份 active 文档元数据和链接一致；1 个 Rust 测试通过 |
 
 ## Graphify 图谱状态
 
@@ -106,3 +108,10 @@
 - 验证信号：当前机器全部标准入口通过；模拟缺少 Rust 时 `make init` 给出明确提示。
 - 未完成事项：全新机器的 Rust 安装前提尚未实测；T02 正式需求/设计文档待整理。
 - 图谱：未改变代码模块或依赖关系，图谱未受影响。
+
+### 2026-09-25：T02 正式文档
+
+- 本次做了什么：从非生效设计草稿整理需求、架构和识别规格三份正式文档，并更新索引与唯一变更台账。
+- 验证信号：目标环境版本已核实；正式文档的 Frontmatter、索引、台账和交叉链接已本地检查通过，待独立复核。
+- 未完成事项：T02 待独立验收；业务任务尚未拆分和启动。
+- 图谱：仅文档内容新增，当前仍无稳定多模块代码结构，图谱未受影响。

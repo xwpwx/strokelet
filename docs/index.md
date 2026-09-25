@@ -19,8 +19,11 @@
 | 分类 | 文档 | 版本 | topic | 说明 |
 |---|---|---|---|---|
 | rules | [Graphify 代码图谱工作流](official/rules/graphify-workflow.md) | 1.0.0 | graphify-workflow | 图谱导航层的使用、更新与验证规则 |
+| requirements | [Strokelet 首版 Demo 需求](official/requirements/strokelet-demo.md) | 1.0.0 | strokelet-demo-requirements | 用户行为、范围与验收 |
+| design | [Strokelet 首版 Demo 架构](official/design/strokelet-demo.md) | 1.0.0 | strokelet-demo-architecture | 组件、数据流和安全边界 |
+| specs | [Strokelet 手势识别规格](official/specs/gesture-recognition.md) | 1.0.0 | gesture-recognition | 识别状态、阈值与判据 |
 
-当前无生效的 requirements / design / specs 文档。产品意图见草稿，提升为正式文档前不得作为唯一开发依据。
+以上文档为首版 Demo 的当前生效依据；草稿区材料仍是非生效版本。
 
 ## 文档分类
 
