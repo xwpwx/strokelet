@@ -5,7 +5,7 @@
 
 ## 当前状态
 
-- 最新 commit: 待首次提交
+- 最新 commit: fd2144988a0e7815f9e0eb669101b5928be3a3ef
 - 测试状态: 未建立
 - Lint: 未建立
 - 类型检查: 未建立
@@ -50,9 +50,9 @@
 
 ## 下一步
 
-1. 提交本次 harness 初始化。
-2. 新会话先读 AGENTS.md、docs/index.md、INIT_CONTRACT.md、TASKS.md、本文件与 DECISIONS.md。
-3. 在 T01 与 T02 中选择一个设为 `active`；未拿到完成证据前不要并行开工。
+1. 新会话先读 AGENTS.md、docs/index.md、INIT_CONTRACT.md、TASKS.md、本文件与 DECISIONS.md。
+2. 在 T01 与 T02 中选择一个设为 `active`；未拿到完成证据前不要并行开工。
+3. T01 开始前先确认 `cargo` / `rustc` 是否可用；缺失则先补工具链，不要开始业务功能。
 
 ## 最近验证结果
 
@@ -85,4 +85,4 @@
 - 本次做了什么：初始化文档治理体系、agent 地图、变更台账、Graphify 规则、初始化契约与状态文件；将已有 superpowers 文档移入 drafts。
 - 重要发现：仓库原先不是 git 仓库；除两份过程文档外无代码。
 - 未完成事项：Rust 工程骨架、正式需求/设计文档、Makefile 验证入口、首次之外的业务实现。
-- 下次开工建议：先完成 git 初始化提交（若本会话已提交则跳过），再按 TASKS.md 只激活 T01 或 T02。
+- 下次开工建议：按 TASKS.md 只激活 T01 或 T02。
