@@ -13,11 +13,11 @@ use std::time::{Duration, Instant};
 use evdev::uinput::VirtualDevice;
 use evdev::{AbsoluteAxisCode, AttributeSet, Device, InputEvent, KeyCode, RelativeAxisCode};
 use strokelet::{
-    CancelReason, CopyKey, CopyOutput, Decision, DeviceProfile, EmitError, FrameProcessor,
+    CancelReason, CopyOutput, Decision, DeviceProfile, EmitError, FrameProcessor, GestureConfig,
     Injection, InjectionLedger, KeySink, Limits, LineCodec, Link, Observation, Outcome,
-    OutputEvent, PollAction, SessionFacts, classify_device, current_uid, facts_from_paths,
-    grab_allowed, is_active_unlocked, key_event, peer_is_target, status_message, syn_report,
-    validate_runtime_path, virtual_mouse_codes,
+    OutputEvent, PollAction, SessionFacts, chord_device_codes, classify_device, config_path,
+    current_uid, facts_from_paths, grab_allowed, is_active_unlocked, key_event, peer_is_target,
+    status_message, syn_report, validate_runtime_path, virtual_mouse_codes,
 };
 
 static STOP: AtomicBool = AtomicBool::new(false);
@@ -55,11 +55,26 @@ fn dispatch(args: Vec<String>) -> Result<(), String> {
         }
         Some("list-devices") => list_devices(),
         Some("run") => run(&args[1..]),
+        Some("settings") => open_settings(),
         Some("--help") | Some("help") | None => {
             print_help();
             Ok(())
         }
         Some(other) => Err(format!("unknown command {other}; try strokelet help")),
+    }
+}
+
+fn open_settings() -> Result<(), String> {
+    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("settings/app.js");
+    let status = std::process::Command::new("gjs")
+        .arg("-m")
+        .arg(&script)
+        .status()
+        .map_err(|err| format!("cannot start gjs: {err}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("settings window exited with {status}"))
     }
 }
 
@@ -71,6 +86,7 @@ strokelet: demo
 Commands:
   status
   list-devices
+  settings
   run --device PATH --uid UID --session ID [--timeout-seconds 120]
       [--passthrough-only] [--inject-copy]
 
@@ -144,14 +160,7 @@ impl UinputKeys {
 impl KeySink for UinputKeys {
     fn emit(&mut self, event: OutputEvent) -> Result<(), EmitError> {
         let input = match event {
-            OutputEvent::Key {
-                code: CopyKey::LeftCtrl,
-                down,
-            } => key_event(KeyCode::KEY_LEFTCTRL, if down { 1 } else { 0 }),
-            OutputEvent::Key {
-                code: CopyKey::C,
-                down,
-            } => key_event(KeyCode::KEY_C, if down { 1 } else { 0 }),
+            OutputEvent::Key { code, down } => key_event(KeyCode(code), if down { 1 } else { 0 }),
             OutputEvent::SynReport => syn_report(),
         };
         self.device.emit(&[input]).map_err(|_| EmitError)
@@ -191,6 +200,7 @@ fn run_bound(opts: &RunOpts, listener: UnixListener) -> Result<(), String> {
     let (rel, keys) = virtual_mouse_codes(&profile);
     let mut mouse = virtual_mouse(&rel, &keys)?;
     let mut keyboard = CopyOutput::new(UinputKeys::new(virtual_keyboard()?));
+    let mut rules = GestureConfig::load(&config_path()).map_err(|err| err.to_string())?;
     if opts.passthrough_only {
         eprintln!("strokelet: passthrough only; Ctrl+C stays disarmed");
     } else if !opts.inject_copy {
@@ -200,7 +210,14 @@ fn run_bound(opts: &RunOpts, listener: UnixListener) -> Result<(), String> {
         "strokelet: listening for the extension; timeout {}s",
         opts.timeout.as_secs()
     );
-    let drive_result = drive(opts, listener, &mut device, &mut mouse, &mut keyboard);
+    let drive_result = drive(
+        opts,
+        listener,
+        &mut device,
+        &mut mouse,
+        &mut keyboard,
+        &mut rules,
+    );
     let _ = device.ungrab();
     let _ = keyboard.release_owned_keys();
     drive_result?;
@@ -214,6 +231,7 @@ fn drive(
     device: &mut Device,
     mouse: &mut VirtualDevice,
     keyboard: &mut CopyOutput<UinputKeys>,
+    rules: &mut GestureConfig,
 ) -> Result<(), String> {
     listener
         .set_nonblocking(true)
@@ -222,6 +240,7 @@ fn drive(
     let mut codec = LineCodec::new();
     let mut link = Link::new();
     let mut processor = FrameProcessor::new(Limits::default());
+    processor.set_trigger(rules.trigger.evdev_code());
     let mut ledger = InjectionLedger::new();
     let mut gesture_id = 1u64;
     let mut grabbed = false;
@@ -232,20 +251,35 @@ fn drive(
             break;
         }
         let now_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-        if client.is_none() {
-            match listener.accept() {
-                Ok((stream, _)) if peer_is_target(&stream, opts.uid) => {
-                    let _ = stream.set_nonblocking(true);
+        match listener.accept() {
+            Ok((mut stream, _)) if peer_is_target(&stream, opts.uid) => {
+                let _ = stream.set_read_timeout(Some(Duration::from_millis(20)));
+                let mut buf = [0u8; 1024];
+                let early = stream.read(&mut buf);
+                let _ = stream.set_nonblocking(true);
+                if let Ok(size) = early
+                    && size > 0
+                    && String::from_utf8_lossy(&buf[..size]).contains("\"reload\"")
+                {
+                    match GestureConfig::load(&config_path()) {
+                        Ok(next) => {
+                            *rules = next;
+                            processor.set_trigger(rules.trigger.evdev_code());
+                            eprintln!("strokelet: reloaded gesture rules");
+                        }
+                        Err(err) => eprintln!("strokelet: reload rejected: {err}"),
+                    }
+                } else if client.is_none() {
                     let _ = (&stream).write_all(Link::hello().as_bytes());
                     link = Link::new();
                     link.connected(now_ms);
                     codec = LineCodec::new();
                     client = Some(stream);
                 }
-                Ok((stream, _)) => drop(stream),
-                Err(err) if err.kind() == ErrorKind::WouldBlock => {}
-                Err(err) => return Err(err.to_string()),
             }
+            Ok((stream, _)) => drop(stream),
+            Err(err) if err.kind() == ErrorKind::WouldBlock => {}
+            Err(err) => return Err(err.to_string()),
         }
         if let Some(stream) = client.as_mut() {
             let mut buf = [0u8; 1024];
@@ -260,10 +294,23 @@ fn drive(
                 }
                 Ok(size) => {
                     for line in codec.push(&buf[..size]).map_err(|err| format!("{err:?}"))? {
-                        if let Err(err) = link.ingest(&line, now_ms) {
-                            eprintln!("strokelet: protocol {err:?}");
-                            link.disconnect();
-                            client = None;
+                        match link.ingest(&line, now_ms) {
+                            Ok(strokelet::ClientUpdate::Reload) => {
+                                match GestureConfig::load(&config_path()) {
+                                    Ok(next) => {
+                                        *rules = next;
+                                        processor.set_trigger(rules.trigger.evdev_code());
+                                        eprintln!("strokelet: reloaded gesture rules");
+                                    }
+                                    Err(err) => eprintln!("strokelet: reload rejected: {err}"),
+                                }
+                            }
+                            Ok(_) => {}
+                            Err(err) => {
+                                eprintln!("strokelet: protocol {err:?}");
+                                link.disconnect();
+                                client = None;
+                            }
                         }
                     }
                 }
@@ -313,6 +360,7 @@ fn drive(
                                 keyboard,
                                 client: &mut client,
                                 opts,
+                                rules,
                                 gesture_id: &mut gesture_id,
                             },
                             event,
@@ -338,6 +386,7 @@ struct Live<'a> {
     keyboard: &'a mut CopyOutput<UinputKeys>,
     client: &'a mut Option<UnixStream>,
     opts: &'a RunOpts,
+    rules: &'a GestureConfig,
     gesture_id: &'a mut u64,
 }
 
@@ -374,8 +423,10 @@ fn publish_gesture(
             .decide(id, live.opts.inject_copy, decision, desktop);
         let outcome = match (decision, injection) {
             (Decision::RightClick, _) => Outcome::Click,
-            (Decision::Copy, Injection::CopyOnce) => {
-                if live.keyboard.send_copy().is_ok() {
+            (Decision::Stroke(direction), Injection::CopyOnce) => {
+                if let Some(chord) = live.rules.chord_for(direction)
+                    && live.keyboard.send_chord(chord).is_ok()
+                {
                     Outcome::CopyInjected
                 } else {
                     let _ = live.keyboard.release_owned_keys();
@@ -480,8 +531,9 @@ fn virtual_mouse(rel: &[u16], keys: &[u16]) -> Result<VirtualDevice, String> {
 
 fn virtual_keyboard() -> Result<VirtualDevice, String> {
     let mut keys = AttributeSet::<KeyCode>::new();
-    keys.insert(KeyCode::KEY_LEFTCTRL);
-    keys.insert(KeyCode::KEY_C);
+    for code in chord_device_codes() {
+        keys.insert(KeyCode(code));
+    }
     VirtualDevice::builder()
         .map_err(|err| format!("uinput: {err}"))?
         .name("strokelet virtual keyboard")

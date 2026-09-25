@@ -54,6 +54,7 @@ pub enum ClientLine {
         modifiers: Vec<String>,
     },
     Pong,
+    Reload,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +102,7 @@ pub enum ClientUpdate {
     Pause(bool),
     State,
     Pong,
+    Reload,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -194,6 +196,7 @@ impl Link {
                 self.require_ready()?;
                 ClientUpdate::Pong
             }
+            ClientLine::Reload => ClientUpdate::Reload,
         };
         self.last_rx_ms = Some(now_ms);
         Ok(update)

@@ -1,10 +1,32 @@
-/// 一次右键手势的决策。同一次按下的重复释放返回 [`Decision::None`]。
+/// 直线手势的四个方向。向上为负 y，向左为负 x。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+/// 一次按键手势的决策。同一次按下的重复释放返回 [`Decision::None`]。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
     None,
     RightClick,
-    Copy,
+    Stroke(Direction),
     Cancel,
+}
+
+impl Decision {
+    pub fn is_stroke(self) -> bool {
+        matches!(self, Decision::Stroke(_))
+    }
+
+    pub fn direction(self) -> Option<Direction> {
+        match self {
+            Decision::Stroke(direction) => Some(direction),
+            _ => None,
+        }
+    }
 }
 
 /// 规格中的可调初值。横向比例、直线度和横向下限是固定判据，不在这里。
@@ -44,7 +66,8 @@ pub struct Gesture {
     y: f64,
     path_len: f64,
     max_distance: f64,
-    max_lateral: f64,
+    max_abs_x: f64,
+    max_abs_y: f64,
     elapsed_ms: u64,
 }
 
@@ -61,7 +84,8 @@ impl Gesture {
             y: 0.0,
             path_len: 0.0,
             max_distance: 0.0,
-            max_lateral: 0.0,
+            max_abs_x: 0.0,
+            max_abs_y: 0.0,
             elapsed_ms: 0,
         }
     }
@@ -75,7 +99,8 @@ impl Gesture {
         self.y = 0.0;
         self.path_len = 0.0;
         self.max_distance = 0.0;
-        self.max_lateral = 0.0;
+        self.max_abs_x = 0.0;
+        self.max_abs_y = 0.0;
         self.elapsed_ms = 0;
     }
 
@@ -88,7 +113,8 @@ impl Gesture {
         self.y += dy;
         self.path_len += dx.hypot(dy);
         self.max_distance = self.max_distance.max(self.x.hypot(self.y));
-        self.max_lateral = self.max_lateral.max(self.x.abs());
+        self.max_abs_x = self.max_abs_x.max(self.x.abs());
+        self.max_abs_y = self.max_abs_y.max(self.y.abs());
         if self.phase == Phase::Pending && self.max_distance > self.limits.start_counts {
             self.phase = Phase::Drawing;
         }
@@ -104,6 +130,11 @@ impl Gesture {
             self.elapsed_ms = elapsed_ms;
         }
         self.expire_if_needed();
+    }
+
+    /// 配置切换时丢掉未完成手势，下一次按下重新开始。
+    pub fn abandon(&mut self) {
+        self.phase = Phase::Idle;
     }
 
     /// 滚轮、额外按钮、丢帧或连接/会话失效。右键释放前保持取消。
@@ -134,13 +165,10 @@ impl Gesture {
                     Decision::Cancel
                 }
             }
-            Phase::Drawing => {
-                if self.upward_copy() {
-                    Decision::Copy
-                } else {
-                    Decision::Cancel
-                }
-            }
+            Phase::Drawing => self
+                .matched_direction()
+                .map(Decision::Stroke)
+                .unwrap_or(Decision::Cancel),
         }
     }
 
@@ -150,12 +178,27 @@ impl Gesture {
         }
     }
 
-    fn upward_copy(&self) -> bool {
-        if self.y > -self.limits.min_up_counts || self.path_len <= 0.0 {
-            return false;
+    fn matched_direction(&self) -> Option<Direction> {
+        if self.path_len <= 0.0 {
+            return None;
         }
-        let net_up = -self.y;
-        let lateral_limit = (net_up * LATERAL_RATIO).max(LATERAL_FLOOR_COUNTS);
-        self.max_lateral <= lateral_limit && net_up / self.path_len >= MIN_STRAIGHTNESS
+        let min = self.limits.min_up_counts;
+        let (direction, net, lateral) = if self.y <= -min && self.x.abs() < self.y.abs() {
+            (Direction::Up, -self.y, self.max_abs_x)
+        } else if self.y >= min && self.x.abs() < self.y.abs() {
+            (Direction::Down, self.y, self.max_abs_x)
+        } else if self.x <= -min && self.y.abs() < self.x.abs() {
+            (Direction::Left, -self.x, self.max_abs_y)
+        } else if self.x >= min && self.y.abs() < self.x.abs() {
+            (Direction::Right, self.x, self.max_abs_y)
+        } else {
+            return None;
+        };
+        let lateral_limit = (net * LATERAL_RATIO).max(LATERAL_FLOOR_COUNTS);
+        if lateral <= lateral_limit && net / self.path_len >= MIN_STRAIGHTNESS {
+            Some(direction)
+        } else {
+            None
+        }
     }
 }

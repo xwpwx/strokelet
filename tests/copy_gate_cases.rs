@@ -1,5 +1,5 @@
 use strokelet::{
-    CopyGate, Decision, DesktopState, Injection, Modifiers, Observation, SessionState,
+    CopyGate, Decision, DesktopState, Direction, Injection, Modifiers, Observation, SessionState,
 };
 
 fn ready() -> DesktopState {
@@ -20,7 +20,7 @@ fn ready() -> DesktopState {
 fn assert_blocks(name: &str, desktop: DesktopState) {
     let mut gate = CopyGate::new();
     assert_eq!(
-        gate.authorize(Decision::Copy, desktop),
+        gate.authorize(Decision::Stroke(Direction::Up), desktop),
         Injection::None,
         "{name}"
     );
@@ -29,8 +29,14 @@ fn assert_blocks(name: &str, desktop: DesktopState) {
 #[test]
 fn fresh_copy_injects_once() {
     let mut gate = CopyGate::new();
-    assert_eq!(gate.authorize(Decision::Copy, ready()), Injection::CopyOnce);
-    assert_eq!(gate.authorize(Decision::Copy, ready()), Injection::None);
+    assert_eq!(
+        gate.authorize(Decision::Stroke(Direction::Up), ready()),
+        Injection::CopyOnce
+    );
+    assert_eq!(
+        gate.authorize(Decision::Stroke(Direction::Up), ready()),
+        Injection::None
+    );
 }
 
 #[test]
@@ -38,8 +44,14 @@ fn rejected_copy_is_not_retried() {
     let mut desktop = ready();
     desktop.paused = Observation::Known(true);
     let mut gate = CopyGate::new();
-    assert_eq!(gate.authorize(Decision::Copy, desktop), Injection::None);
-    assert_eq!(gate.authorize(Decision::Copy, ready()), Injection::None);
+    assert_eq!(
+        gate.authorize(Decision::Stroke(Direction::Up), desktop),
+        Injection::None
+    );
+    assert_eq!(
+        gate.authorize(Decision::Stroke(Direction::Up), ready()),
+        Injection::None
+    );
 }
 
 #[test]
@@ -47,7 +59,10 @@ fn non_copy_decisions_do_not_inject() {
     for decision in [Decision::RightClick, Decision::Cancel, Decision::None] {
         let mut gate = CopyGate::new();
         assert_eq!(gate.authorize(decision, ready()), Injection::None);
-        assert_eq!(gate.authorize(Decision::Copy, ready()), Injection::None);
+        assert_eq!(
+            gate.authorize(Decision::Stroke(Direction::Up), ready()),
+            Injection::None
+        );
     }
 }
 
@@ -55,7 +70,10 @@ fn non_copy_decisions_do_not_inject() {
 fn ipc_request_never_injects() {
     let mut gate = CopyGate::new();
     assert_eq!(CopyGate::reject_ipc(), Injection::None);
-    assert_eq!(gate.authorize(Decision::Copy, ready()), Injection::CopyOnce);
+    assert_eq!(
+        gate.authorize(Decision::Stroke(Direction::Up), ready()),
+        Injection::CopyOnce
+    );
 }
 
 #[test]

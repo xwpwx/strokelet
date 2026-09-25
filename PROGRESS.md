@@ -5,21 +5,21 @@
 
 ## 当前状态
 
-- 最新 commit: 运行 `git rev-parse HEAD` 查询；本次实现尚未提交
-- 测试状态: `make check` 通过，58 个测试
-- Lint: `make lint` 通过
-- 类型检查: `make check` 包含 `cargo check --locked --offline`
-- 完整验证: `make check` 通过；GJS socket 与扩展安装脚本通过
-- Graphify 图谱: 未建立
+- 最新 commit: `8562bcb`；手势方向、配置和设置窗口尚未提交
+- 测试状态: 设置窗口的自动测试已通过；`make check` 见最近验证结果
+- Lint: clippy `-D warnings` 已通过
+- 类型检查: 同上
+- 完整验证: 窗口脚本能被 gjs 加载；没有显示器时停在 Gtk “Failed to open display”。桌面点击尚未做
+- Graphify 图谱: 未建立。本机没有 graphify 命令
 
 ## 当前目标
 
-- T01–T08 已有可执行证据。T09 实机验收为 `blocked`，等待用户操作真实鼠标。
+- T01–T08 已有可执行证据。T09 实机验收为 `blocked`。T10 设置窗口正在做，自动测试已过，等用户打开窗口。
 
 ## 相关文档
 
 - 生效依据：`docs/index.md` 所列的首版需求、架构、手势识别规格和 Graphify 规则
-- 草稿/方案：`docs/drafts/2026-09-25-strokelet-demo-design.md`、`docs/drafts/2026-09-25-strokelet-demo-plan.md`（非生效版本）
+- 草稿/方案：`docs/drafts/2026-09-25-strokelet-demo-design.md`、`docs/drafts/2026-09-25-strokelet-demo-plan.md`、`docs/drafts/2026-09-25-strokelet-gesture-gui-plan.md`（均非生效版本）
 - 重要决策：DECISIONS.md
 - 图谱导航：graphify-out/GRAPH_REPORT.md（若存在）
 
@@ -38,6 +38,7 @@
 ## 进行中
 
 - [ ] T09：实机验收（blocked，等待用户）
+- [ ] T10：手势与快捷键设置窗口（active；自动测试已过，窗口还没在桌面点过）
 
 ## 已知问题
 
@@ -56,8 +57,8 @@
 ## 下一步
 
 1. 新会话先读 AGENTS.md、docs/index.md、INIT_CONTRACT.md、TASKS.md、本文件与 DECISIONS.md。
-2. 不要把 T09 标成 passing。请用户按 `docs/acceptance/demo-checklist.md` 在 Wayland 桌面做一次上划和粘贴。
-3. 若要补代码，优先补 grab 前的按键状态，以及复制前的真实权限观察。
+2. 让用户打开 `./target/debug/strokelet settings`，保存一条规则，并确认正在运行的演示打出 `reloaded gesture rules`。不要把 T10 标成 passing，除非这一步真的发生。
+3. 不要把 T09 标成 passing。请用户按 `docs/acceptance/demo-checklist.md` 在 Wayland 桌面做一次上划和粘贴。
 
 ## 最近验证结果
 
@@ -81,6 +82,8 @@
 | 2026-09-25 | `make check` | 通过 | 58 个测试：手势 30、门禁 6、输入 8、协议 13、启动 1 |
 | 2026-09-25 | `gjs -m scripts/check-gjs-socket.js` | 通过 | 打印 `strokelet: gjs unix socket round-trip ok` |
 | 2026-09-25 | `scripts/check-extension-install.sh` | 通过 | 外来目录拒绝安装和删除；非 Wayland 拒绝 `run-demo.sh` |
+| 2026-09-25 | `make check` | 通过 | 67 个测试：配置 6、门禁 6、手势 31、输入 9、协议 14、启动 1 |
+| 2026-09-25 | `gjs -m settings/app.js`（无显示器） | 按预期停住 | Gtk 报 Failed to open display；脚本已加载。窗口点击未做 |
 
 ## Graphify 图谱状态
 
@@ -153,3 +156,11 @@
 - 未完成事项：T09 等待用户实机验证。grab 前未读物理按键；权限观察在循环里固定为通过。本次改动未提交。
 - 下次开工建议：用户按验收清单操作真实鼠标。不要把模拟测试写成实机通过。
 - 图谱：模块已超过 3 个，本会话未建立图谱。
+
+### 2026-09-25：设置窗口
+
+- 本次做了什么：直线识别扩成上下左右；快捷键改成可配置和弦；新增 `strokelet settings` 和 `~/.config/strokelet/gestures.json`。运行中的演示用单独连接上的 `reload` 重新读配置。
+- 验证信号：clippy 通过。配置往返、未知键、重复方向和 reload 行有测试。`gjs -m settings/app.js` 在没有显示器时停在 Gtk 打不开显示，说明脚本能加载。
+- 未完成事项：窗口没有在桌面上点过。T09 仍 blocked。本次改动未提交。
+- 下次开工建议：用户先 Ctrl+C 停掉旧进程，用新二进制启动，再开设置窗口。
+- 图谱：未建立。`command -v graphify` 为空，图谱未受影响是因为命令不存在，不是因为结构没变。

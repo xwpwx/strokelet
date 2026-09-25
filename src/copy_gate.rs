@@ -62,7 +62,7 @@ impl CopyGate {
             return Injection::None;
         }
         self.settled = true;
-        if decision == Decision::Copy && desktop_allows_copy(desktop) {
+        if decision.is_stroke() && desktop_allows_copy(desktop) {
             Injection::CopyOnce
         } else {
             Injection::None

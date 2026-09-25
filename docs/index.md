@@ -59,6 +59,7 @@ src/db/CONSTRAINTS.md
 
 - [docs/drafts/2026-09-25-strokelet-demo-design.md](drafts/2026-09-25-strokelet-demo-design.md) — 首版 Demo 设计（非生效版本）
 - [docs/drafts/2026-09-25-strokelet-demo-plan.md](drafts/2026-09-25-strokelet-demo-plan.md) — 首版 Demo 实施计划（非生效版本）
+- [docs/drafts/2026-09-25-strokelet-gesture-gui-plan.md](drafts/2026-09-25-strokelet-gesture-gui-plan.md) — 手势与快捷键设置 GUI 计划（非生效版本）
 
 ## Graphify
 

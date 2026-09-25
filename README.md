@@ -2,7 +2,7 @@
 
 Ubuntu 26.04 / GNOME Shell 50 Wayland 上的右键直线上划 Demo：松开后发送一次 Ctrl+C，并显示不抢焦点的轨迹。普通右击仍然可用。
 
-这不是通用桌面版，也不是完整的 Easystroke 替代品。没有录制界面、自由形状或任意命令。
+设置窗口可以改触发键、直线方向，以及每条方向对应的一条快捷键。没有录制、自由形状或任意命令。
 
 ## 开发验证
 
@@ -34,7 +34,9 @@ scripts/check-extension-install.sh
 scripts/run-demo.sh --device /dev/input/by-id/你的鼠标 --uid "$(id -u)" --session 会话号
 ```
 
-默认前台运行 120 秒。复制注入由该脚本打开；直接调用 `strokelet run` 时默认关闭，需要 `--inject-copy`。`--passthrough-only` 只透传。
+默认前台运行 120 秒，可以用 `--timeout-seconds` 加长。复制注入由该脚本打开；直接调用 `strokelet run` 时默认关闭，需要 `--inject-copy`。`--passthrough-only` 只透传。
+
+改规则：另开一个终端，运行 `./target/debug/strokelet settings`。窗口不抓鼠标。保存后写入 `~/.config/strokelet/gestures.json`；如果演示正在运行，会让它重新读这份文件。没有配置文件时，默认仍是右键上划 Ctrl+C。
 
 暂停：点面板上的「划」，打开「暂停」。停止：等超时，或在运行终端按 Ctrl+C。卸载：`scripts/remove-extension.sh`，它只删除带本项目标记的扩展目录。
 

@@ -1,3 +1,4 @@
+mod config;
 mod copy;
 mod copy_gate;
 mod gesture;
@@ -7,9 +8,14 @@ mod runtime;
 mod server;
 mod session;
 
-pub use copy::{CopyOutput, EmitError, KeyCode as CopyKey, KeySink, OutputEvent};
+pub use config::{
+    ConfigError, GestureConfig, TriggerButton, config_path, parse_config, write_config,
+};
+pub use copy::{
+    Chord, CopyOutput, EmitError, KeySink, Modifier, OutputEvent, chord_device_codes, key_names,
+};
 pub use copy_gate::{CopyGate, DesktopState, Injection, Modifiers, Observation, SessionState};
-pub use gesture::{Decision, Gesture, Limits};
+pub use gesture::{Decision, Direction, Gesture, Limits};
 pub use input::{
     DeviceProfile, DeviceReject, FrameProcessor, classify_device, event_tuple, grab_allowed,
     key_event, rel_event, syn_dropped, syn_report, virtual_mouse_codes,

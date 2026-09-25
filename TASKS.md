@@ -93,6 +93,7 @@
 | T07 | 输入帧透传右键以外的事件，并只在右击决策重放右键 | T06 | passing | `make check` | 8 个输入序列测试通过 | `make check`：透传、右击重放、上划、滚轮、SYN_DROPPED、合帧和设备过滤通过 |
 | T08 | 扩展安装脚本拒绝外来目录，GJS 能收发一行 JSON | T07 | passing | `scripts/check-extension-install.sh`；`gjs -m scripts/check-gjs-socket.js` | 两条命令都打印成功 | 2026-09-25 两条命令成功；Shell 内轨迹未实机验证 |
 | T09 | 在真实桌面完成上划复制、负例、热插拔和锁屏验收 | T08 | blocked | 按 `docs/acceptance/demo-checklist.md` 操作真实鼠标 | 编辑器与 Firefox 粘贴结果、轨迹和普通右击 | 等待用户实机验证；模拟测试不能代替 |
+| T10 | 设置窗口可改触发键、直线方向和对应快捷键，运行中的演示能重新读取 | 用户确认草稿计划；T09 仍 blocked | active | `make check`；打开 `strokelet settings` 后保存并让正在运行的演示打出 reloaded | 配置往返、未知键、重复方向、reload 行测试通过；窗口本身要在桌面点过 | 自动测试已通过。窗口尚未在本次会话里点过，不能标 passing |
 
 ## T01: 建立 Rust crate 骨架与最小测试
 
@@ -204,6 +205,15 @@
 - 范围：`src/main.rs` 前台循环、`scripts/run-demo.sh`、`docs/acceptance/demo-checklist.md`。
 - 验证命令：按验收清单操作真实鼠标。
 - 完成证据：尚无。当前会话不能操作真实鼠标，不能把 `make check` 记成实机通过。
+
+## T10: 手势与快捷键设置窗口
+
+- 行为：`strokelet settings` 打开 GTK 窗口，编辑一个触发键和最多四条直线方向快捷键。保存写入 `~/.config/strokelet/gestures.json`。正在运行的 `run` 收到 `reload` 后换上新规则，不替换扩展连接。缺文件时用右键上划 Ctrl+C；损坏文件拒绝启动。
+- 依赖：用户确认 `docs/drafts/2026-09-25-strokelet-gesture-gui-plan.md`。T09 仍 blocked，这次是用户明确要求先做设置。
+- 状态：active
+- 范围：`src/config.rs`、`src/copy.rs`、`src/gesture.rs`、`src/main.rs`、`settings/app.js`。不升格正式文档，不标 T09 通过。
+- 验证命令：`make check`。窗口路径要在桌面打开并保存一次。
+- 完成证据：自动测试通过。窗口尚未在桌面上点过，所以保持 active。
 
 ### 冲刺合同
 

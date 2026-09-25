@@ -1,10 +1,10 @@
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::time::{SystemTime, UNIX_EPOCH};
 use strokelet::{
-    ClientUpdate, CopyKey, CopyOutput, Decision, EmitError, Injection, InjectionLedger, KeySink,
-    LineCodec, Link, MAX_LINE_BYTES, Observation, Outcome, OutputEvent, PathError, PathFacts,
-    PollAction, ProtocolError, RUNTIME_DIR_MODE, SOCKET_MODE, SessionFacts, SessionState,
-    is_active_unlocked, peer_is_target, validate_runtime_path,
+    Chord, ClientUpdate, CopyOutput, Decision, Direction, EmitError, Injection, InjectionLedger,
+    KeySink, LineCodec, Link, MAX_LINE_BYTES, Observation, Outcome, OutputEvent, PathError,
+    PathFacts, PollAction, ProtocolError, RUNTIME_DIR_MODE, SOCKET_MODE, SessionFacts,
+    SessionState, is_active_unlocked, peer_is_target, validate_runtime_path,
 };
 
 struct LogSink {
@@ -46,6 +46,16 @@ fn fresh_logind() -> Observation<SessionState> {
         active: true,
         locked: false,
     })
+}
+
+#[test]
+fn reload_is_accepted_before_ready() {
+    let mut link = Link::new();
+    link.connected(0);
+    assert_eq!(
+        link.ingest(r#"{"type":"reload"}"#, 0).unwrap(),
+        ClientUpdate::Reload
+    );
 }
 
 #[test]
@@ -127,12 +137,12 @@ fn health_timeout_and_stale_state_block_copy() {
     let live = ready_link(0);
     let fresh = live.desktop(fresh_logind(), Observation::Known(true), 500);
     assert_eq!(
-        InjectionLedger::new().decide(1, true, Decision::Copy, fresh),
+        InjectionLedger::new().decide(1, true, Decision::Stroke(Direction::Up), fresh),
         Injection::CopyOnce
     );
     let stale = live.desktop(fresh_logind(), Observation::Known(true), 1001);
     assert_eq!(
-        InjectionLedger::new().decide(2, true, Decision::Copy, stale),
+        InjectionLedger::new().decide(2, true, Decision::Stroke(Direction::Up), stale),
         Injection::None
     );
 }
@@ -143,11 +153,11 @@ fn inject_switch_starts_off_and_ipc_cannot_copy() {
     let desktop = link.desktop(fresh_logind(), Observation::Known(true), 10);
     let mut ledger = InjectionLedger::new();
     assert_eq!(
-        ledger.decide(1, false, Decision::Copy, desktop),
+        ledger.decide(1, false, Decision::Stroke(Direction::Up), desktop),
         Injection::None
     );
     assert_eq!(
-        ledger.decide(1, true, Decision::Copy, desktop),
+        ledger.decide(1, true, Decision::Stroke(Direction::Up), desktop),
         Injection::None
     );
     assert_eq!(InjectionLedger::reject_ipc(), Injection::None);
@@ -160,27 +170,30 @@ fn copy_chord_is_ctrl_down_c_down_c_up_ctrl_up() {
         attempts: 0,
         fail_at: None,
     });
-    output.send_copy().unwrap();
+    let chord = Chord::parse(&["ctrl".into()], "c").unwrap();
+    output.send_chord(&chord).unwrap();
+    let ctrl = chord.modifiers()[0].code();
+    let key = chord.key_code();
     assert_eq!(
         output.sink().events,
         vec![
             OutputEvent::Key {
-                code: CopyKey::LeftCtrl,
+                code: ctrl,
                 down: true
             },
             OutputEvent::SynReport,
             OutputEvent::Key {
-                code: CopyKey::C,
+                code: key,
                 down: true
             },
             OutputEvent::SynReport,
             OutputEvent::Key {
-                code: CopyKey::C,
+                code: key,
                 down: false
             },
             OutputEvent::SynReport,
             OutputEvent::Key {
-                code: CopyKey::LeftCtrl,
+                code: ctrl,
                 down: false
             },
             OutputEvent::SynReport,
@@ -195,17 +208,19 @@ fn partial_copy_releases_only_owned_keys() {
         attempts: 0,
         fail_at: Some(2),
     });
-    assert_eq!(output.send_copy(), Err(EmitError));
+    let chord = Chord::parse(&["ctrl".into()], "c").unwrap();
+    assert_eq!(output.send_chord(&chord), Err(EmitError));
+    let ctrl = chord.modifiers()[0].code();
     assert_eq!(
         output.sink().events,
         vec![
             OutputEvent::Key {
-                code: CopyKey::LeftCtrl,
+                code: ctrl,
                 down: true
             },
             OutputEvent::SynReport,
             OutputEvent::Key {
-                code: CopyKey::LeftCtrl,
+                code: ctrl,
                 down: false
             },
             OutputEvent::SynReport,

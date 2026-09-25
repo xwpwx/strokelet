@@ -111,6 +111,8 @@ pub struct FrameProcessor {
     tracking: bool,
     frame: Vec<InputEvent>,
     now_ms: u64,
+    pressed_at_ms: u64,
+    trigger_code: u16,
     last_decision: Option<Decision>,
 }
 
@@ -121,6 +123,8 @@ impl FrameProcessor {
             tracking: false,
             frame: Vec::new(),
             now_ms: 0,
+            pressed_at_ms: 0,
+            trigger_code: KeyCode::BTN_RIGHT.0,
             last_decision: None,
         }
     }
@@ -131,6 +135,14 @@ impl FrameProcessor {
 
     pub fn is_tracking(&self) -> bool {
         self.tracking
+    }
+
+    pub fn set_trigger(&mut self, code: u16) {
+        if code != self.trigger_code && self.tracking {
+            self.gesture.abandon();
+            self.tracking = false;
+        }
+        self.trigger_code = code;
     }
 
     pub fn handle(&mut self, event: InputEvent, now_ms: u64) -> Vec<InputEvent> {
@@ -157,7 +169,7 @@ impl FrameProcessor {
         let mut right_up = false;
         let mut cancel_now = false;
         for event in &frame {
-            match classify_part(event) {
+            match self.classify_part(event) {
                 Part::RelX(value) => dx += value,
                 Part::RelY(value) => dy += value,
                 Part::Wheel | Part::OtherKey => cancel_now = true,
@@ -169,8 +181,10 @@ impl FrameProcessor {
         if right_down && !self.tracking {
             self.gesture.press();
             self.tracking = true;
+            self.pressed_at_ms = self.now_ms;
             self.last_decision = None;
         }
+        let held_ms = self.now_ms.saturating_sub(self.pressed_at_ms);
         if self.tracking && (dx != 0 || dy != 0) {
             self.gesture.motion(f64::from(dx), f64::from(dy));
         }
@@ -178,35 +192,36 @@ impl FrameProcessor {
             self.gesture.cancel();
         }
         if self.tracking {
-            self.gesture.advance(self.now_ms);
+            self.gesture.advance(held_ms);
         }
         let mut out = Vec::new();
+        let trigger_code = self.trigger_code;
         let forwarded: Vec<_> = frame
             .iter()
             .copied()
-            .filter(|event| !is_right_button(event))
+            .filter(|event| !is_trigger_button(event, trigger_code))
             .collect();
         if !forwarded.is_empty() {
             out.extend(forwarded);
             out.push(syn_report());
         }
         if right_up && self.tracking {
-            let decision = self.gesture.release(self.now_ms);
+            let decision = self.gesture.release(held_ms);
             self.tracking = false;
             self.last_decision = Some(decision);
             if decision == Decision::RightClick {
-                out.extend(replay_right_click());
+                out.extend(replay_click(trigger_code));
             }
         }
         out
     }
 }
 
-fn replay_right_click() -> [InputEvent; 4] {
+fn replay_click(code: u16) -> [InputEvent; 4] {
     [
-        key_event(KeyCode::BTN_RIGHT, 1),
+        key_event(KeyCode(code), 1),
         syn_report(),
-        key_event(KeyCode::BTN_RIGHT, 0),
+        key_event(KeyCode(code), 0),
         syn_report(),
     ]
 }
@@ -222,30 +237,32 @@ enum Part {
     Other,
 }
 
-fn classify_part(event: &InputEvent) -> Part {
-    if event.event_type() == EventType::RELATIVE {
-        return match event.code() {
-            code if code == RelativeAxisCode::REL_X.0 => Part::RelX(event.value()),
-            code if code == RelativeAxisCode::REL_Y.0 => Part::RelY(event.value()),
-            code if WHEEL_CODES.contains(&code) => Part::Wheel,
-            _ => Part::Other,
-        };
+impl FrameProcessor {
+    fn classify_part(&self, event: &InputEvent) -> Part {
+        if event.event_type() == EventType::RELATIVE {
+            return match event.code() {
+                code if code == RelativeAxisCode::REL_X.0 => Part::RelX(event.value()),
+                code if code == RelativeAxisCode::REL_Y.0 => Part::RelY(event.value()),
+                code if WHEEL_CODES.contains(&code) => Part::Wheel,
+                _ => Part::Other,
+            };
+        }
+        if event.event_type() == EventType::KEY && event.code() == self.trigger_code {
+            return match event.value() {
+                1 => Part::RightDown,
+                0 => Part::RightUp,
+                _ => Part::Other,
+            };
+        }
+        if event.event_type() == EventType::KEY {
+            return Part::OtherKey;
+        }
+        Part::Other
     }
-    if event.event_type() == EventType::KEY && event.code() == KeyCode::BTN_RIGHT.0 {
-        return match event.value() {
-            1 => Part::RightDown,
-            0 => Part::RightUp,
-            _ => Part::Other,
-        };
-    }
-    if event.event_type() == EventType::KEY {
-        return Part::OtherKey;
-    }
-    Part::Other
 }
 
-fn is_right_button(event: &InputEvent) -> bool {
-    event.event_type() == EventType::KEY && event.code() == KeyCode::BTN_RIGHT.0
+fn is_trigger_button(event: &InputEvent, trigger_code: u16) -> bool {
+    event.event_type() == EventType::KEY && event.code() == trigger_code
 }
 
 fn is_report(event: &InputEvent) -> bool {
