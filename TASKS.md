@@ -85,8 +85,9 @@
 | ID | 行为描述 | 依赖 | 状态 | 验证命令 | 确认命令/信号 | 完成证据 |
 |---|---|---|---|---|---|---|
 | T01 | 建立 Rust crate 骨架、锁定依赖，并提供最小可运行测试 | 无 | passing | `make test` 或 `cargo test` | `rustc --version`；至少一个测试通过 | 独立评估：1 个测试通过；`Cargo.lock` 已跟踪；binary 启动通过 |
-| T02 | 将首版 Demo 设计从草稿提升为正式需求/设计文档 | T01 非硬依赖，可并行于文档会话 | active | 检查 `docs/index.md` 生效列表与 frontmatter | `docs/CHANGELOG.md` 有对应新增记录 | 待验证 |
+| T02 | 将首版 Demo 设计从草稿提升为正式需求/设计文档 | T01 非硬依赖，可并行于文档会话 | passing | 检查 `docs/index.md` 生效列表与 frontmatter | `docs/CHANGELOG.md` 有对应新增记录 | 独立评估：3 份新增 active 文档，索引、台账、链接一致 |
 | T03 | 建立 Makefile 标准入口（setup/init/test/lint/check） | T01 | passing | `make init && make test && make check` | 新会话只读仓库能回答怎么跑、怎么测 | 独立评估：init/setup/test/check 通过；缺 Rust 提示明确 |
+| T04 | 相对位移手势产生一次 RightClick/Copy/Cancel 决策 | T02 | active | `make test && make check` | 边界、取消、重复释放测试通过 | 待验证 |
 
 ## T01: 建立 Rust crate 骨架与最小测试
 
@@ -109,7 +110,7 @@
 - 目标：把 `docs/drafts/` 中的首版设计整理进 `docs/official/`，使开发有唯一生效依据。
 - 范围：检索后新建或原地写入 requirements/design/specs；更新 `docs/index.md` 生效列表与 `docs/CHANGELOG.md`。不在本任务实现代码。
 - 依赖：无（可与 T01 分会话进行，但任意时刻仍只能有 1 个 `active`）
-- 状态：active
+- 状态：passing
 - 验证命令：
   - 确认正式文档含标准 Frontmatter，且 `status: active`
   - 确认 `docs/index.md` 列出这些文档
@@ -137,3 +138,19 @@
 - 完成证据：
   - 上述命令成功输出
   - `INIT_CONTRACT.md` 对应验收项被勾选，且与命令结果一致
+
+## T04: 纯手势识别状态机
+
+- 行为：右键按下后按 SYN_REPORT 帧累计相对位移，根据正式手势规格在释放时返回一次 RightClick、Copy 或 Cancel；重复释放返回 None。
+- 依赖：T02 的 `docs/official/specs/gesture-recognition.md`。
+- 状态：active
+- 范围：`src/gesture.rs` 与 `tests/gesture_cases.rs`，覆盖阈值、折返、直线度、超时及取消。不连接 evdev/uinput，不绘制轨迹，不注入 Ctrl+C。
+- 验证命令：`make test && make check`。
+- 完成证据：具名行为测试通过，重复释放无第二次决策；纯状态机没有设备、socket 或剪贴板副作用。
+
+### 冲刺合同
+
+- 范围：只输出决策和当前是否进入 Drawing，供后续输入与轨迹模块消费。
+- 验证标准：79/80 counts、2500/2501 ms、横向偏移和直线度边界；普通右击、下上往返、横/下划、取消均有可回放测试。
+- 排除项：真实设备接管、GNOME 扩展、协议和复制注入。
+- 运行时信号：测试进程退出码与各具名测试结果；无外部资源或设备 FD。
