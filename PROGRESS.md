@@ -14,8 +14,7 @@
 
 ## 当前目标
 
-- 完成 `TASKS.md` T01 的 Rust 工程骨架与可运行测试。
-- T01 保持 `active`，待独立验收后更新状态。
+- T01 已经独立验收；当前执行 `TASKS.md` T03，建立标准 Makefile 入口。
 
 ## 相关文档
 
@@ -30,10 +29,11 @@
 - [x] 建立 docs/index.md 与唯一变更台账 docs/CHANGELOG.md
 - [x] 建立 Graphify 正式规则文档
 - [x] 建立 AGENTS.md / CLAUDE.md 与状态文件
+- [x] T01：Rust crate 骨架与最小测试，独立评估通过
 
 ## 进行中
 
-- [ ] T01：Rust crate 骨架与最小测试（已实现，待独立验收）
+- [ ] T03：Makefile 标准验证入口
 
 ## 已知问题
 
@@ -51,8 +51,8 @@
 ## 下一步
 
 1. 新会话先读 AGENTS.md、docs/index.md、INIT_CONTRACT.md、TASKS.md、本文件与 DECISIONS.md。
-2. 用 `PATH="$HOME/.cargo/bin:$PATH" cargo test --offline` 独立验收 T01；由 supervisor/harness/人工 reviewer 根据结果更新 `TASKS.md` 状态。
-3. T01 验收后再启动 T02 或 T03；未拿到完成证据前不要并行开工。
+2. 完成 T03 的 Makefile 并验证 `make init && make test && make check`。
+3. T03 独立验收后再启动 T02；未拿到完成证据前不要并行开工。
 
 ## 最近验证结果
 
@@ -61,6 +61,7 @@
 | 2026-09-25 | 文档结构与 Frontmatter 人工检查 | 通过 | 仅 harness 文件；无 make/cargo 可跑 |
 | 2026-09-25 | graphify | 不适用 | 空仓库初始化，图谱未建立 |
 | 2026-09-25 | `PATH="$HOME/.cargo/bin:$PATH" cargo test --offline` | 通过 | 1 个具名启动测试；先观察到失败，再通过 |
+| 2026-09-25 | 独立评估：`cargo fmt`、`cargo clippy`、`cargo check`、`cargo test`、`cargo run`（锁定/离线） | 通过 | T01：1 个具名测试，binary 输出 `strokelet: scaffold only`，锁文件已跟踪 |
 
 ## Graphify 图谱状态
 
