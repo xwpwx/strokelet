@@ -85,8 +85,8 @@
 | ID | 行为描述 | 依赖 | 状态 | 验证命令 | 确认命令/信号 | 完成证据 |
 |---|---|---|---|---|---|---|
 | T01 | 建立 Rust crate 骨架、锁定依赖，并提供最小可运行测试 | 无 | passing | `make test` 或 `cargo test` | `rustc --version`；至少一个测试通过 | 独立评估：1 个测试通过；`Cargo.lock` 已跟踪；binary 启动通过 |
-| T02 | 将首版 Demo 设计从草稿提升为正式需求/设计文档 | T01 非硬依赖，可并行于文档会话 | not_started | 检查 `docs/index.md` 生效列表与 frontmatter | `docs/CHANGELOG.md` 有对应新增记录 | 生效文档路径 + CHANGELOG 行 |
-| T03 | 建立 Makefile 标准入口（setup/init/test/lint/check） | T01 | active | `make init && make test && make check` | 新会话只读仓库能回答怎么跑、怎么测 | 待验证 |
+| T02 | 将首版 Demo 设计从草稿提升为正式需求/设计文档 | T01 非硬依赖，可并行于文档会话 | active | 检查 `docs/index.md` 生效列表与 frontmatter | `docs/CHANGELOG.md` 有对应新增记录 | 待验证 |
+| T03 | 建立 Makefile 标准入口（setup/init/test/lint/check） | T01 | passing | `make init && make test && make check` | 新会话只读仓库能回答怎么跑、怎么测 | 独立评估：init/setup/test/check 通过；缺 Rust 提示明确 |
 
 ## T01: 建立 Rust crate 骨架与最小测试
 
@@ -109,7 +109,7 @@
 - 目标：把 `docs/drafts/` 中的首版设计整理进 `docs/official/`，使开发有唯一生效依据。
 - 范围：检索后新建或原地写入 requirements/design/specs；更新 `docs/index.md` 生效列表与 `docs/CHANGELOG.md`。不在本任务实现代码。
 - 依赖：无（可与 T01 分会话进行，但任意时刻仍只能有 1 个 `active`）
-- 状态：not_started
+- 状态：active
 - 验证命令：
   - 确认正式文档含标准 Frontmatter，且 `status: active`
   - 确认 `docs/index.md` 列出这些文档
@@ -126,7 +126,7 @@
 - 目标：提供 `make setup` / `make init` / `make test` / `make check`（及必要的 lint），使初始化契约可执行。
 - 范围：Makefile 或等价脚本、更新 `INIT_CONTRACT.md` 清单。不实现业务功能。
 - 依赖：T01
-- 状态：active
+- 状态：passing
 - 验证命令：
   - `make init`
   - `make test`

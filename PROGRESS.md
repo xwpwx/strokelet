@@ -14,7 +14,7 @@
 
 ## 当前目标
 
-- T01 已经独立验收；当前执行 `TASKS.md` T03，Makefile 已实现，待独立验收。
+- T01、T03 已经独立验收；当前执行 `TASKS.md` T02，整理首版正式需求/设计文档。
 
 ## 相关文档
 
@@ -30,10 +30,11 @@
 - [x] 建立 Graphify 正式规则文档
 - [x] 建立 AGENTS.md / CLAUDE.md 与状态文件
 - [x] T01：Rust crate 骨架与最小测试，独立评估通过
+- [x] T03：标准 Makefile 入口，独立评估通过
 
 ## 进行中
 
-- [ ] T03：Makefile 标准验证入口
+- [ ] T02：首版 Demo 正式需求/设计文档
 
 ## 已知问题
 
@@ -50,8 +51,8 @@
 ## 下一步
 
 1. 新会话先读 AGENTS.md、docs/index.md、INIT_CONTRACT.md、TASKS.md、本文件与 DECISIONS.md。
-2. 独立验收 T03 的 `make init && make test && make check`，并检查缺失 Rust 时的错误提示。
-3. T03 验收后再启动 T02；未拿到完成证据前不要并行开工。
+2. 完成 T02 的正式文档、索引与变更台账，并验证 Frontmatter。
+3. T02 独立验收后，再按正式需求拆分业务任务；未拿到完成证据前不要并行开工。
 
 ## 最近验证结果
 
@@ -63,6 +64,7 @@
 | 2026-09-25 | 独立评估：`cargo fmt`、`cargo clippy`、`cargo check`、`cargo test`、`cargo run`（锁定/离线） | 通过 | T01：1 个具名测试，binary 输出 `strokelet: scaffold only`，锁文件已跟踪 |
 | 2026-09-25 | `make setup`；`make init && make test && make check` | 通过 | 当前机器；1 个具名测试，fmt / clippy / typecheck 成功 |
 | 2026-09-25 | `HOME=/tmp/strokelet-missing-rust PATH=/usr/bin:/bin make init` | 按预期失败 | 明确提示缺少 rustc 和安装入口 |
+| 2026-09-25 | 独立评估：`make init`、`make setup`、`make test`、`make check` | 通过 | T03：1 个具名测试；缺 Rust 提示有效；全新机器未实测 |
 
 ## Graphify 图谱状态
 
@@ -102,5 +104,5 @@
 
 - 本次做了什么：加入 Makefile 的 setup/init/test/lint/check，并更新启动契约和 README。
 - 验证信号：当前机器全部标准入口通过；模拟缺少 Rust 时 `make init` 给出明确提示。
-- 未完成事项：T03 待独立验收；全新机器的 Rust 安装前提尚未实测；T02 正式需求/设计文档尚未开始。
+- 未完成事项：全新机器的 Rust 安装前提尚未实测；T02 正式需求/设计文档待整理。
 - 图谱：未改变代码模块或依赖关系，图谱未受影响。
