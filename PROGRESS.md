@@ -23,6 +23,8 @@
 - 重要决策：DECISIONS.md
 - 图谱导航：graphify-out/GRAPH_REPORT.md（若存在）
 
+
+
 ## 已完成
 
 - [x] 建立 docs/ 目录骨架与权威分层
@@ -35,10 +37,14 @@
 - [x] T04：纯手势识别状态机，`make check` 通过后记为 passing
 - [x] T05–T08：门禁、协议、输入序列、扩展安装与 GJS socket
 
+
+
 ## 进行中
 
 - [ ] T09：实机验收（blocked，等待用户）
 - [ ] T10：手势与快捷键设置窗口（active；自动测试已过，窗口还没在桌面点过）
+
+
 
 ## 已知问题
 
@@ -47,12 +53,18 @@
 - 复制门禁里的权限观察在前台循环中固定为已知且通过，没有单独的权限探测。
 - GNOME Shell 内的轨迹、焦点和菜单尚未实机运行。St 不能在 Shell 外实例化。
 
+
+
 ## 阻塞项
 
-| 阻塞项 | 原因 | 需要谁处理 | 下一步 |
-|---|---|---|---|
-| 全新机器初始化未验证 | 尚无干净机器验证 Rust 安装前提 | 后续维护者 | 具备全新环境时运行 `make init`、`make setup`、`make check` |
-| 实机设备与覆盖层尚未验证 | 当前会话不能操作真实鼠标，也不能在 Shell 外创建 St | 用户 | 按 `docs/acceptance/demo-checklist.md` 做一次上划和粘贴 |
+
+| 阻塞项          | 原因                             | 需要谁处理 | 下一步                                             |
+| ------------ | ------------------------------ | ----- | ----------------------------------------------- |
+| 全新机器初始化未验证   | 尚无干净机器验证 Rust 安装前提             | 后续维护者 | 具备全新环境时运行 `make init`、`make setup`、`make check` |
+| 实机设备与覆盖层尚未验证 | 当前会话不能操作真实鼠标，也不能在 Shell 外创建 St | 用户    | 按 `docs/acceptance/demo-checklist.md` 做一次上划和粘贴  |
+
+
+
 
 ## 下一步
 
@@ -60,30 +72,37 @@
 2. 让用户打开 `./target/debug/strokelet settings`，保存一条规则，并确认正在运行的演示打出 `reloaded gesture rules`。不要把 T10 标成 passing，除非这一步真的发生。
 3. 不要把 T09 标成 passing。请用户按 `docs/acceptance/demo-checklist.md` 在 Wayland 桌面做一次上划和粘贴。
 
+
+
 ## 最近验证结果
 
-| 时间 | 命令 | 结果 | 备注 |
-|---|---|---|---|
-| 2026-09-25 | 文档结构与 Frontmatter 人工检查 | 通过 | 仅 harness 文件；无 make/cargo 可跑 |
-| 2026-09-25 | graphify | 不适用 | 空仓库初始化，图谱未建立 |
-| 2026-09-25 | `PATH="$HOME/.cargo/bin:$PATH" cargo test --offline` | 通过 | 1 个具名启动测试；先观察到失败，再通过 |
-| 2026-09-25 | 独立评估：`cargo fmt`、`cargo clippy`、`cargo check`、`cargo test`、`cargo run`（锁定/离线） | 通过 | T01：1 个具名测试，binary 输出 `strokelet: scaffold only`，锁文件已跟踪 |
-| 2026-09-25 | `make setup`；`make init && make test && make check` | 通过 | 当前机器；1 个具名测试，fmt / clippy / typecheck 成功 |
-| 2026-09-25 | `HOME=/tmp/strokelet-missing-rust PATH=/usr/bin:/bin make init` | 按预期失败 | 明确提示缺少 rustc 和安装入口 |
-| 2026-09-25 | 独立评估：`make init`、`make setup`、`make test`、`make check` | 通过 | T03：1 个具名测试；缺 Rust 提示有效；全新机器未实测 |
-| 2026-09-25 | `gnome-shell --version`、`lsb_release -ds`、`echo "$XDG_SESSION_TYPE"` | 通过 | GNOME Shell 50.1、Ubuntu 26.04.1 LTS、Wayland；仅环境事实，不代表功能验收 |
-| 2026-09-25 | `python3` + PyYAML 校验 official Frontmatter/topic/index/CHANGELOG/链接；`make check` | 通过 | 4 份 active 文档元数据和链接一致；1 个 Rust 测试通过 |
-| 2026-09-25 | 独立评估：official Frontmatter/topic/index/CHANGELOG/链接与 `make check` | 通过 | T02：3 份新增 active 文档，无重大遗漏 |
-| 2026-09-25 | `make test`（实现前） | 按预期失败 | `tests/gesture_cases.rs` 找不到 `Decision` / `Gesture` / `Limits` |
-| 2026-09-25 | `cargo fmt --all` 后 `make check` | 通过 | 25 个手势测试 + 1 个启动测试；fmt / clippy / typecheck 成功 |
-| 2026-09-25 | `make check` | 通过 | 补上绘制超时提前进入取消；30 个手势测试 + 1 个启动测试 |
-| 2026-09-25 | `make test`（门禁实现前） | 按预期失败 | `tests/copy_gate_cases.rs` 找不到 `CopyGate` 等类型 |
-| 2026-09-25 | `make check` | 通过 | T05：6 个门禁测试 + 既有 31 个测试；fmt / clippy / typecheck 成功 |
-| 2026-09-25 | `make check` | 通过 | 58 个测试：手势 30、门禁 6、输入 8、协议 13、启动 1 |
-| 2026-09-25 | `gjs -m scripts/check-gjs-socket.js` | 通过 | 打印 `strokelet: gjs unix socket round-trip ok` |
-| 2026-09-25 | `scripts/check-extension-install.sh` | 通过 | 外来目录拒绝安装和删除；非 Wayland 拒绝 `run-demo.sh` |
-| 2026-09-25 | `make check` | 通过 | 67 个测试：配置 6、门禁 6、手势 31、输入 9、协议 14、启动 1 |
-| 2026-09-25 | `gjs -m settings/app.js`（无显示器） | 按预期停住 | Gtk 报 Failed to open display；脚本已加载。窗口点击未做 |
+
+| 时间         | 命令                                                                               | 结果    | 备注                                                             |
+| ---------- | -------------------------------------------------------------------------------- | ----- | -------------------------------------------------------------- |
+| 2026-09-25 | 文档结构与 Frontmatter 人工检查                                                           | 通过    | 仅 harness 文件；无 make/cargo 可跑                                   |
+| 2026-09-25 | graphify                                                                         | 不适用   | 空仓库初始化，图谱未建立                                                   |
+| 2026-09-25 | `PATH="$HOME/.cargo/bin:$PATH" cargo test --offline`                             | 通过    | 1 个具名启动测试；先观察到失败，再通过                                           |
+| 2026-09-25 | 独立评估：`cargo fmt`、`cargo clippy`、`cargo check`、`cargo test`、`cargo run`（锁定/离线）    | 通过    | T01：1 个具名测试，binary 输出 `strokelet: scaffold only`，锁文件已跟踪        |
+| 2026-09-25 | `make setup`；`make init && make test && make check`                              | 通过    | 当前机器；1 个具名测试，fmt / clippy / typecheck 成功                       |
+| 2026-09-25 | `HOME=/tmp/strokelet-missing-rust PATH=/usr/bin:/bin make init`                  | 按预期失败 | 明确提示缺少 rustc 和安装入口                                             |
+| 2026-09-25 | 独立评估：`make init`、`make setup`、`make test`、`make check`                           | 通过    | T03：1 个具名测试；缺 Rust 提示有效；全新机器未实测                                |
+| 2026-09-25 | `gnome-shell --version`、`lsb_release -ds`、`echo "$XDG_SESSION_TYPE"`             | 通过    | GNOME Shell 50.1、Ubuntu 26.04.1 LTS、Wayland；仅环境事实，不代表功能验收      |
+| 2026-09-25 | `python3` + PyYAML 校验 official Frontmatter/topic/index/CHANGELOG/链接；`make check` | 通过    | 4 份 active 文档元数据和链接一致；1 个 Rust 测试通过                            |
+| 2026-09-25 | 独立评估：official Frontmatter/topic/index/CHANGELOG/链接与 `make check`                 | 通过    | T02：3 份新增 active 文档，无重大遗漏                                      |
+| 2026-09-25 | `make test`（实现前）                                                                 | 按预期失败 | `tests/gesture_cases.rs` 找不到 `Decision` / `Gesture` / `Limits` |
+| 2026-09-25 | `cargo fmt --all` 后 `make check`                                                 | 通过    | 25 个手势测试 + 1 个启动测试；fmt / clippy / typecheck 成功                 |
+| 2026-09-25 | `make check`                                                                     | 通过    | 补上绘制超时提前进入取消；30 个手势测试 + 1 个启动测试                                |
+| 2026-09-25 | `make test`（门禁实现前）                                                               | 按预期失败 | `tests/copy_gate_cases.rs` 找不到 `CopyGate` 等类型                  |
+| 2026-09-25 | `make check`                                                                     | 通过    | T05：6 个门禁测试 + 既有 31 个测试；fmt / clippy / typecheck 成功            |
+| 2026-09-25 | `make check`                                                                     | 通过    | 58 个测试：手势 30、门禁 6、输入 8、协议 13、启动 1                              |
+| 2026-09-25 | `gjs -m scripts/check-gjs-socket.js`                                             | 通过    | 打印 `strokelet: gjs unix socket round-trip ok`                  |
+| 2026-09-25 | `scripts/check-extension-install.sh`                                             | 通过    | 外来目录拒绝安装和删除；非 Wayland 拒绝 `run-demo.sh`                         |
+| 2026-09-25 | `make check`                                                                     | 通过    | 67 个测试：配置 6、门禁 6、手势 31、输入 9、协议 14、启动 1                         |
+| 2026-09-25 | `gjs -m settings/app.js`（无显示器）                                                   | 按预期停住 | Gtk 报 Failed to open display；脚本已加载。窗口点击未做                      |
+| 2026-09-25 | `cargo test --offline --locked --all-targets` 与 clippy `-D warnings`          | 通过    | 72 个测试。快捷键录制的窗口点击未做                                          |
+
+
+
 
 ## Graphify 图谱状态
 
@@ -92,17 +111,25 @@
 - 最近图谱健康：未检查
 - 需要重建或更新的原因：代码已超过 3 个模块，但本会话未运行 graphify；若本机没有该命令，保持未建立
 
+
+
 ## 决策摘要
 
-| 决策 | 为什么这样做 | 放弃的方案 | 影响范围 |
-|---|---|---|---|
-| CLAUDE.md 引用 AGENTS.md | 避免两份规则漂移 | 复制全文 | 后续只改 AGENTS.md |
-| CHANGELOG 作为唯一台账 | 保持 index 精简 | 在每篇文档维护 changelog | 追溯只查 docs/CHANGELOG.md |
-| 遗留 superpowers 文档降为草稿 | 缺 Frontmatter，且未经正式确认 | 直接当作 official | 开发不得引用其为唯一依据 |
+
+| 决策                     | 为什么这样做                | 放弃的方案             | 影响范围                   |
+| ---------------------- | --------------------- | ----------------- | ---------------------- |
+| CLAUDE.md 引用 AGENTS.md | 避免两份规则漂移              | 复制全文              | 后续只改 AGENTS.md         |
+| CHANGELOG 作为唯一台账       | 保持 index 精简           | 在每篇文档维护 changelog | 追溯只查 docs/CHANGELOG.md |
+| 遗留 superpowers 文档降为草稿  | 缺 Frontmatter，且未经正式确认 | 直接当作 official     | 开发不得引用其为唯一依据           |
+
 
 > 注：这里只记录影响当前执行的关键决策摘要；重要设计决策的完整“为什么”请写入 DECISIONS.md；完整方案或推演请写入 docs/drafts/ 或 docs/official/，并在“相关文档”中链接。
 
+
+
 ## 会话交接记录
+
+
 
 ### 2026-09-25
 
@@ -110,6 +137,8 @@
 - 重要发现：仓库原先不是 git 仓库；除两份过程文档外无代码。
 - 未完成事项：Rust 工程骨架、正式需求/设计文档、Makefile 验证入口、首次之外的业务实现。
 - 下次开工建议：按 TASKS.md 只激活 T01 或 T02。
+
+
 
 ### 2026-09-25：T01 工程骨架
 
@@ -119,6 +148,8 @@
 - 下次开工建议：先独立验收 T01 的测试与锁文件；确认完成后再选下一任务。
 - 图谱：目前仅有最小 crate，未形成稳定多模块结构，不需要建立图谱。
 
+
+
 ### 2026-09-25：T03 标准入口
 
 - 本次做了什么：加入 Makefile 的 setup/init/test/lint/check，并更新启动契约和 README。
@@ -126,12 +157,16 @@
 - 未完成事项：全新机器的 Rust 安装前提尚未实测；T02 正式需求/设计文档待整理。
 - 图谱：未改变代码模块或依赖关系，图谱未受影响。
 
+
+
 ### 2026-09-25：T02 正式文档
 
 - 本次做了什么：从非生效设计草稿整理需求、架构和识别规格三份正式文档，并更新索引与唯一变更台账。
 - 验证信号：目标环境版本已核实；正式文档的 Frontmatter、索引、台账和交叉链接已本地检查通过，待独立复核。
 - 未完成事项：T02 已独立验收；T04 纯识别状态机已启动，设备与轨迹仍未实现。
 - 图谱：仅文档内容新增，当前仍无稳定多模块代码结构，图谱未受影响。
+
+
 
 ### 2026-09-25：T04 纯识别状态机
 
@@ -141,6 +176,8 @@
 - 下次开工建议：先独立验收 T04，确认完成后再选下一任务。
 - 图谱：仍只有一个识别模块，未形成 3 个以上核心模块，图谱未受影响。
 
+
+
 ### 2026-09-25：T04 收口并开始 T05
 
 - 本次做了什么：按已通过的 `make check` 将 T04 记为 `passing`，并实现复制注入门禁。Copy 只有在会话、扩展、暂停、修饰键、通信和权限都确认安全时才返回一次 `CopyOnce`。
@@ -148,6 +185,8 @@
 - 未完成事项：T05 仍待复核后才能改为 `passing`。协议、设备和轨迹尚未开始。本次改动未提交。
 - 下次开工建议：先复核 T05，再选下一任务。
 - 图谱：识别与门禁仍不足 3 个核心模块，图谱未受影响。
+
+
 
 ### 2026-09-25：实施计划中的可自动部分
 
@@ -157,6 +196,8 @@
 - 下次开工建议：用户按验收清单操作真实鼠标。不要把模拟测试写成实机通过。
 - 图谱：模块已超过 3 个，本会话未建立图谱。
 
+
+
 ### 2026-09-25：设置窗口
 
 - 本次做了什么：直线识别扩成上下左右；快捷键改成可配置和弦；新增 `strokelet settings` 和 `~/.config/strokelet/gestures.json`。运行中的演示用单独连接上的 `reload` 重新读配置。
@@ -164,3 +205,50 @@
 - 未完成事项：窗口没有在桌面上点过。T09 仍 blocked。本次改动未提交。
 - 下次开工建议：用户先 Ctrl+C 停掉旧进程，用新二进制启动，再开设置窗口。
 - 图谱：未建立。`command -v graphify` 为空，图谱未受影响是因为命令不存在，不是因为结构没变。
+
+
+
+### 2026-09-25：快捷键录制计划
+
+- 本次做了什么：写下非生效草稿 `docs/drafts/2026-09-25-strokelet-shortcut-capture-plan.md`。用设置窗口里的一次按键录制替换固定按键名单。没有改代码。
+- 未完成事项：计划尚未确认，不得当作实现依据。T10 窗口仍未在桌面点过。T09 仍 blocked。
+- 图谱：只新增一份草稿索引，图谱未受影响。
+
+### 2026-09-25：快捷键录制
+
+- 本次做了什么：用户确认录制计划后，设置窗口改为按下组合来记录快捷键。左右修饰键分开保存。旧的名字配置仍能读。演示进程仍不读键盘。
+- 验证信号：见最近验证结果。窗口里的按键录制还没在桌面点过。
+- 未完成事项：T10 仍 active。T09 仍 blocked。本次改动未提交。
+
+### 2026-09-25：录制时独占键盘
+
+- 本次做了什么：Ctrl+Alt+T 这类系统快捷键会先被 GNOME 处理，窗口因此失焦。录制改为短时独占物理键盘，录完或取消后放开。演示进程仍不读键盘。
+- 验证信号：`cargo test` 与 clippy 通过。真实键盘独占还没在这次会话里按过。
+- 图谱：未建立。命令不存在。
+
+### 2026-09-25：自定义轨迹计划
+
+- 本次做了什么：写下非生效草稿 `docs/drafts/2026-09-25-strokelet-custom-stroke-plan.md`。用录制的鼠标轨迹替换只认四个直线方向。没有改代码。
+- 未完成事项：计划尚未确认。T09 仍 blocked。T10 仍 active。
+- 图谱：只新增一份草稿索引，图谱未受影响。
+
+### 2026-09-25：自定义轨迹
+
+- 本次做了什么：用户确认后，松开时按整条轨迹选规则。设置窗口可以画出轨迹。旧的四个方向仍按直线读取。
+- 验证信号：`cargo test` 与 clippy 见最近验证。桌面上的画轨迹还没在这次会话里做过。
+- 图谱：未建立。命令不存在。
+
+### 2026-09-26：画轨迹改由正在运行的演示回传
+
+- 本次做了什么：用户画的时候，录制进程抢不到已被演示独占的鼠标。现在「画出轨迹」向正在运行的演示要下一笔；演示没抓住鼠标时才自己独占。
+- 验证信号：见最近验证结果。桌面上还没重画过。
+- 未完成事项：T10 仍 active。T09 仍 blocked。本次改动未提交。
+- 图谱：未建立。命令不存在。
+
+### 2026-09-26：屏幕上显示规则名称
+
+- 本次做了什么：规则可以填写屏幕名称。快捷键发出后，扩展在指针旁显示这个名字；留空则不显示。
+- 验证信号：见最近验证结果。屏幕上的文字还没在桌面看过。改了 `extension.js`，需要注销一次。
+- 未完成事项：T10 仍 active。T09 仍 blocked。本次改动未提交。
+- 图谱：未建立。命令不存在。
+

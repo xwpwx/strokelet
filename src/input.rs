@@ -133,6 +133,10 @@ impl FrameProcessor {
         self.last_decision
     }
 
+    pub fn stroke_points(&self) -> &[(f64, f64)] {
+        self.gesture.points()
+    }
+
     pub fn is_tracking(&self) -> bool {
         self.tracking
     }

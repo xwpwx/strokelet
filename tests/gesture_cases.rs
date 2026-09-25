@@ -1,4 +1,4 @@
-use strokelet::{Decision, Direction, Gesture, Limits};
+use strokelet::{Decision, Gesture, Limits};
 
 fn gesture() -> Gesture {
     Gesture::new(Limits::default())
@@ -21,7 +21,7 @@ fn upward_stroke_copies_once() {
         gesture.motion(0.0, -10.0);
     }
 
-    assert_eq!(gesture.release(500), Decision::Stroke(Direction::Up));
+    assert_eq!(gesture.release(500), Decision::Stroke);
     assert_eq!(gesture.release(500), Decision::None);
 }
 
@@ -68,18 +68,12 @@ fn upward_79_cancels() {
 
 #[test]
 fn upward_80_copies() {
-    assert_eq!(
-        decide(&[(0.0, -80.0)], 100),
-        Decision::Stroke(Direction::Up)
-    );
+    assert_eq!(decide(&[(0.0, -80.0)], 100), Decision::Stroke);
 }
 
 #[test]
 fn duration_2500_copies() {
-    assert_eq!(
-        decide(&[(0.0, -80.0)], 2500),
-        Decision::Stroke(Direction::Up)
-    );
+    assert_eq!(decide(&[(0.0, -80.0)], 2500), Decision::Stroke);
 }
 
 #[test]
@@ -132,7 +126,7 @@ fn pending_hold_past_deadline_stays_right_click() {
 }
 
 #[test]
-fn lateral_floor_limits_short_upward_stroke() {
+fn long_enough_strokes_are_offered_to_the_matcher() {
     let limits = Limits {
         start_counts: 12.0,
         click_slop_counts: 12.0,
@@ -142,12 +136,12 @@ fn lateral_floor_limits_short_upward_stroke() {
     let mut inside = Gesture::new(limits);
     inside.press();
     inside.motion(12.0, -40.0);
-    assert_eq!(inside.release(100), Decision::Stroke(Direction::Up));
+    assert_eq!(inside.release(100), Decision::Stroke);
 
     let mut outside = Gesture::new(limits);
     outside.press();
     outside.motion(13.0, -40.0);
-    assert_eq!(outside.release(100), Decision::Cancel);
+    assert_eq!(outside.release(100), Decision::Stroke);
 }
 
 #[test]
@@ -157,35 +151,29 @@ fn long_press_inside_slop_stays_right_click() {
 
 #[test]
 fn lateral_30_copies() {
-    assert_eq!(
-        decide(&[(30.0, -100.0)], 200),
-        Decision::Stroke(Direction::Up)
-    );
-    assert_eq!(
-        decide(&[(-30.0, -100.0)], 200),
-        Decision::Stroke(Direction::Up)
-    );
+    assert_eq!(decide(&[(30.0, -100.0)], 200), Decision::Stroke);
+    assert_eq!(decide(&[(-30.0, -100.0)], 200), Decision::Stroke);
 }
 
 #[test]
-fn lateral_31_cancels() {
-    assert_eq!(decide(&[(31.0, -100.0)], 200), Decision::Cancel);
-    assert_eq!(decide(&[(-31.0, -100.0)], 200), Decision::Cancel);
+fn lateral_31_is_still_long_enough() {
+    assert_eq!(decide(&[(31.0, -100.0)], 200), Decision::Stroke);
+    assert_eq!(decide(&[(-31.0, -100.0)], 200), Decision::Stroke);
 }
 
 #[test]
 fn straightness_within_limit_copies() {
     assert_eq!(
         decide(&[(0.0, -100.0), (8.0, 0.0), (-8.0, 0.0)], 200),
-        Decision::Stroke(Direction::Up)
+        Decision::Stroke
     );
 }
 
 #[test]
-fn straightness_past_limit_cancels() {
+fn straightness_past_the_old_limit_is_still_a_stroke() {
     assert_eq!(
         decide(&[(0.0, -100.0), (9.0, 0.0), (-9.0, 0.0)], 200),
-        Decision::Cancel
+        Decision::Stroke
     );
 }
 
@@ -197,46 +185,34 @@ fn round_trip_is_not_a_click() {
     assert!(gesture.is_drawing());
     gesture.motion(0.0, -100.0);
     assert!(gesture.is_drawing());
-    assert_eq!(gesture.release(200), Decision::Cancel);
+    assert_eq!(gesture.release(200), Decision::Stroke);
 }
 
 #[test]
 fn downward_stroke_matches() {
-    assert_eq!(
-        decide(&[(0.0, 120.0)], 200),
-        Decision::Stroke(Direction::Down)
-    );
+    assert_eq!(decide(&[(0.0, 120.0)], 200), Decision::Stroke);
 }
 
 #[test]
 fn right_and_left_strokes_match() {
-    assert_eq!(
-        decide(&[(120.0, 0.0)], 200),
-        Decision::Stroke(Direction::Right)
-    );
-    assert_eq!(
-        decide(&[(-120.0, 0.0)], 200),
-        Decision::Stroke(Direction::Left)
-    );
+    assert_eq!(decide(&[(120.0, 0.0)], 200), Decision::Stroke);
+    assert_eq!(decide(&[(-120.0, 0.0)], 200), Decision::Stroke);
 }
 
 #[test]
-fn diagonal_stroke_cancels() {
-    assert_eq!(decide(&[(100.0, -100.0)], 200), Decision::Cancel);
+fn diagonal_stroke_is_long_enough() {
+    assert_eq!(decide(&[(100.0, -100.0)], 200), Decision::Stroke);
 }
 
 #[test]
 fn retrace_uses_path_length_not_endpoint() {
-    assert_eq!(decide(&[(0.0, -100.0), (0.0, 20.0)], 200), Decision::Cancel);
+    assert_eq!(decide(&[(0.0, -100.0), (0.0, 20.0)], 200), Decision::Stroke);
 }
 
 #[test]
 fn split_axis_frames_are_less_straight_than_one_frame() {
-    assert_eq!(
-        decide(&[(20.0, -100.0)], 200),
-        Decision::Stroke(Direction::Up)
-    );
-    assert_eq!(decide(&[(20.0, 0.0), (0.0, -100.0)], 200), Decision::Cancel);
+    assert_eq!(decide(&[(20.0, -100.0)], 200), Decision::Stroke);
+    assert_eq!(decide(&[(20.0, 0.0), (0.0, -100.0)], 200), Decision::Stroke);
 }
 
 #[test]
@@ -281,7 +257,7 @@ fn second_press_does_not_reset_an_open_gesture() {
     gesture.press();
     gesture.motion(0.0, -80.0);
     gesture.press();
-    assert_eq!(gesture.release(100), Decision::Stroke(Direction::Up));
+    assert_eq!(gesture.release(100), Decision::Stroke);
 }
 
 #[test]
@@ -289,7 +265,7 @@ fn next_press_starts_a_fresh_gesture() {
     let mut gesture = gesture();
     gesture.press();
     gesture.motion(0.0, -80.0);
-    assert_eq!(gesture.release(100), Decision::Stroke(Direction::Up));
+    assert_eq!(gesture.release(100), Decision::Stroke);
     gesture.press();
     assert_eq!(gesture.release(40), Decision::RightClick);
 }

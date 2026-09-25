@@ -1,10 +1,10 @@
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::time::{SystemTime, UNIX_EPOCH};
 use strokelet::{
-    Chord, ClientUpdate, CopyOutput, Decision, Direction, EmitError, Injection, InjectionLedger,
-    KeySink, LineCodec, Link, MAX_LINE_BYTES, Observation, Outcome, OutputEvent, PathError,
-    PathFacts, PollAction, ProtocolError, RUNTIME_DIR_MODE, SOCKET_MODE, SessionFacts,
-    SessionState, is_active_unlocked, peer_is_target, validate_runtime_path,
+    Chord, ClientUpdate, CopyOutput, Decision, EmitError, Injection, InjectionLedger, KeySink,
+    LineCodec, Link, MAX_LINE_BYTES, Observation, Outcome, OutputEvent, PathError, PathFacts,
+    PollAction, ProtocolError, RUNTIME_DIR_MODE, SOCKET_MODE, SessionFacts, SessionState,
+    is_active_unlocked, peer_is_target, validate_runtime_path,
 };
 
 struct LogSink {
@@ -125,6 +125,21 @@ fn old_begin_id_dies_on_disconnect() {
 }
 
 #[test]
+fn named_end_carries_the_screen_name_and_a_blank_name_is_omitted() {
+    let mut link = ready_link(0);
+    link.begin(1).unwrap();
+    let named = link
+        .end_with_name(1, Outcome::CopyInjected, Some("复制"))
+        .unwrap();
+    assert!(named.contains("\"name\":\"复制\""));
+
+    let mut plain = ready_link(0);
+    plain.begin(2).unwrap();
+    let unnamed = plain.end(2, Outcome::CopyInjected).unwrap();
+    assert!(!unnamed.contains("name"));
+}
+
+#[test]
 fn health_timeout_and_stale_state_block_copy() {
     let mut link = ready_link(0);
     assert_eq!(link.poll(250), PollAction::SendPing);
@@ -137,12 +152,12 @@ fn health_timeout_and_stale_state_block_copy() {
     let live = ready_link(0);
     let fresh = live.desktop(fresh_logind(), Observation::Known(true), 500);
     assert_eq!(
-        InjectionLedger::new().decide(1, true, Decision::Stroke(Direction::Up), fresh),
+        InjectionLedger::new().decide(1, true, Decision::Stroke, fresh),
         Injection::CopyOnce
     );
     let stale = live.desktop(fresh_logind(), Observation::Known(true), 1001);
     assert_eq!(
-        InjectionLedger::new().decide(2, true, Decision::Stroke(Direction::Up), stale),
+        InjectionLedger::new().decide(2, true, Decision::Stroke, stale),
         Injection::None
     );
 }
@@ -153,11 +168,11 @@ fn inject_switch_starts_off_and_ipc_cannot_copy() {
     let desktop = link.desktop(fresh_logind(), Observation::Known(true), 10);
     let mut ledger = InjectionLedger::new();
     assert_eq!(
-        ledger.decide(1, false, Decision::Stroke(Direction::Up), desktop),
+        ledger.decide(1, false, Decision::Stroke, desktop),
         Injection::None
     );
     assert_eq!(
-        ledger.decide(1, true, Decision::Stroke(Direction::Up), desktop),
+        ledger.decide(1, true, Decision::Stroke, desktop),
         Injection::None
     );
     assert_eq!(InjectionLedger::reject_ipc(), Injection::None);
@@ -172,7 +187,7 @@ fn copy_chord_is_ctrl_down_c_down_c_up_ctrl_up() {
     });
     let chord = Chord::parse(&["ctrl".into()], "c").unwrap();
     output.send_chord(&chord).unwrap();
-    let ctrl = chord.modifiers()[0].code();
+    let ctrl = chord.modifier_codes()[0];
     let key = chord.key_code();
     assert_eq!(
         output.sink().events,
@@ -210,7 +225,7 @@ fn partial_copy_releases_only_owned_keys() {
     });
     let chord = Chord::parse(&["ctrl".into()], "c").unwrap();
     assert_eq!(output.send_chord(&chord), Err(EmitError));
-    let ctrl = chord.modifiers()[0].code();
+    let ctrl = chord.modifier_codes()[0];
     assert_eq!(
         output.sink().events,
         vec![

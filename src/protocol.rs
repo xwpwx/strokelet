@@ -34,7 +34,12 @@ pub enum CancelReason {
 pub enum ServerLine {
     Hello { version: u32 },
     Begin { id: u64 },
-    End { id: u64, outcome: Outcome },
+    End {
+        id: u64,
+        outcome: Outcome,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
     Cancel { id: u64, reason: CancelReason },
     Ping,
 }
@@ -212,8 +217,21 @@ impl Link {
     }
 
     pub fn end(&mut self, id: u64, outcome: Outcome) -> Result<String, ProtocolError> {
+        self.end_with_name(id, outcome, None)
+    }
+
+    pub fn end_with_name(
+        &mut self,
+        id: u64,
+        outcome: Outcome,
+        name: Option<&str>,
+    ) -> Result<String, ProtocolError> {
         self.finish(id)?;
-        Ok(encode(&ServerLine::End { id, outcome }))
+        let name = name
+            .map(str::trim)
+            .filter(|text| !text.is_empty() && !text.chars().any(char::is_control))
+            .map(str::to_string);
+        Ok(encode(&ServerLine::End { id, outcome, name }))
     }
 
     pub fn cancel(&mut self, id: u64, reason: CancelReason) -> Result<String, ProtocolError> {

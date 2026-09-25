@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::io::{ErrorKind, Read, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -11,13 +11,17 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use evdev::uinput::VirtualDevice;
-use evdev::{AbsoluteAxisCode, AttributeSet, Device, InputEvent, KeyCode, RelativeAxisCode};
+use evdev::{
+    AbsoluteAxisCode, AttributeSet, Device, EventType, InputEvent, KeyCode, RelativeAxisCode,
+    SynchronizationCode,
+};
 use strokelet::{
-    CancelReason, CopyOutput, Decision, DeviceProfile, EmitError, FrameProcessor, GestureConfig,
-    Injection, InjectionLedger, KeySink, Limits, LineCodec, Link, Observation, Outcome,
-    OutputEvent, PollAction, SessionFacts, chord_device_codes, classify_device, config_path,
-    current_uid, facts_from_paths, grab_allowed, is_active_unlocked, key_event, peer_is_target,
-    status_message, syn_report, validate_runtime_path, virtual_mouse_codes,
+    CancelReason, CaptureUpdate, ChordCapture, CopyOutput, Decision, DeviceProfile, EmitError,
+    FrameProcessor, GestureConfig, Injection, InjectionLedger, KeySink, Limits, LineCodec, Link,
+    Observation, Outcome, OutputEvent, PollAction, SessionFacts, TriggerButton, chord_device_codes,
+    classify_device, config_path, current_uid, facts_from_paths, grab_allowed, is_active_unlocked,
+    key_event, parse_config, peer_is_target, status_message, syn_report, validate_runtime_path,
+    virtual_mouse_codes,
 };
 
 static STOP: AtomicBool = AtomicBool::new(false);
@@ -56,6 +60,11 @@ fn dispatch(args: Vec<String>) -> Result<(), String> {
         Some("list-devices") => list_devices(),
         Some("run") => run(&args[1..]),
         Some("settings") => open_settings(),
+        Some("capture-chord") => capture_chord(),
+        Some("capture-stroke") => {
+            capture_stroke(args.get(1).map(String::as_str).unwrap_or("right"))
+        }
+        Some("check-gestures") => check_gestures(),
         Some("--help") | Some("help") | None => {
             print_help();
             Ok(())
@@ -66,9 +75,11 @@ fn dispatch(args: Vec<String>) -> Result<(), String> {
 
 fn open_settings() -> Result<(), String> {
     let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("settings/app.js");
+    let executable = env::current_exe().map_err(|err| format!("cannot find strokelet: {err}"))?;
     let status = std::process::Command::new("gjs")
         .arg("-m")
         .arg(&script)
+        .env("STROKELET_BIN", executable)
         .status()
         .map_err(|err| format!("cannot start gjs: {err}"))?;
     if status.success() {
@@ -76,6 +87,415 @@ fn open_settings() -> Result<(), String> {
     } else {
         Err(format!("settings window exited with {status}"))
     }
+}
+
+fn capture_chord() -> Result<(), String> {
+    let mut grabbed = match grab_keyboards() {
+        Ok(devices) => devices,
+        Err(message) => {
+            emit_capture_line(&serde_json::json!({"type": "error", "message": message}));
+            return Err(message);
+        }
+    };
+    let value = read_chord(&mut grabbed);
+    drop(grabbed);
+    emit_capture_line(&value);
+    if value.get("type").and_then(|kind| kind.as_str()) == Some("error") {
+        return Err(value
+            .get("message")
+            .and_then(|message| message.as_str())
+            .unwrap_or("capture failed")
+            .to_string());
+    }
+    Ok(())
+}
+
+struct GrabbedDevice(Device);
+
+impl Drop for GrabbedDevice {
+    fn drop(&mut self) {
+        let _ = self.0.ungrab();
+    }
+}
+
+fn grab_keyboards() -> Result<Vec<GrabbedDevice>, String> {
+    let mut grabbed = Vec::new();
+    for (_path, mut device) in evdev::enumerate() {
+        if !is_physical_keyboard(&device) {
+            continue;
+        }
+        if set_nonblocking(device.as_raw_fd()).is_err() {
+            continue;
+        }
+        if device.grab().is_err() {
+            continue;
+        }
+        grabbed.push(GrabbedDevice(device));
+    }
+    if grabbed.is_empty() {
+        return Err("没有找到键盘".into());
+    }
+    Ok(grabbed)
+}
+
+fn is_physical_keyboard(device: &Device) -> bool {
+    let name = device.name().unwrap_or("").to_ascii_lowercase();
+    if name.contains("strokelet") || name.contains("ydotool") {
+        return false;
+    }
+    device
+        .supported_keys()
+        .is_some_and(|keys| keys.contains(KeyCode::KEY_A) && keys.contains(KeyCode::KEY_LEFTCTRL))
+}
+
+fn read_chord(devices: &mut [GrabbedDevice]) -> serde_json::Value {
+    let mut capture = ChordCapture::new();
+    let started = Instant::now();
+    loop {
+        let limit = if capture.has_main() {
+            Duration::from_secs(10)
+        } else {
+            Duration::from_secs(5)
+        };
+        let remaining = limit.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            let message = if capture.has_main() {
+                "时间到了，这次没有保存"
+            } else {
+                "5 秒内没有按下主键"
+            };
+            return serde_json::json!({"type": "cancel", "message": message});
+        }
+        let mut fds: Vec<nix::libc::pollfd> = devices
+            .iter()
+            .map(|device| nix::libc::pollfd {
+                fd: device.0.as_raw_fd(),
+                events: nix::libc::POLLIN,
+                revents: 0,
+            })
+            .collect();
+        let timeout = i32::try_from(remaining.as_millis()).unwrap_or(i32::MAX);
+        let ready =
+            unsafe { nix::libc::poll(fds.as_mut_ptr(), fds.len() as nix::libc::nfds_t, timeout) };
+        if ready < 0 {
+            let err = std::io::Error::last_os_error();
+            if err.kind() == ErrorKind::Interrupted {
+                continue;
+            }
+            return serde_json::json!({"type": "error", "message": err.to_string()});
+        }
+        if ready == 0 {
+            continue;
+        }
+        for (index, slot) in fds.iter().enumerate() {
+            if slot.revents & nix::libc::POLLIN == 0 {
+                continue;
+            }
+            let events = match devices[index].0.fetch_events() {
+                Ok(events) => events,
+                Err(err) if err.kind() == ErrorKind::WouldBlock => continue,
+                Err(err) => {
+                    return serde_json::json!({"type": "error", "message": err.to_string()});
+                }
+            };
+            for event in events {
+                if event.event_type() != EventType::KEY {
+                    continue;
+                }
+                let update = match event.value() {
+                    1 => capture.down(event.code()),
+                    0 => capture.up(event.code()),
+                    _ => None,
+                };
+                if let Some(done) = publish_capture(update) {
+                    return done;
+                }
+            }
+        }
+    }
+}
+
+fn publish_capture(update: Option<CaptureUpdate>) -> Option<serde_json::Value> {
+    let update = update?;
+    match update {
+        CaptureUpdate::Live(label) => {
+            emit_capture_line(&serde_json::json!({"type": "live", "label": label}));
+            None
+        }
+        CaptureUpdate::Finished(chord) => Some(serde_json::json!({
+            "type": "chord",
+            "modifierCodes": chord.modifier_codes(),
+            "keyCode": chord.key_code(),
+            "label": chord.key_name(),
+        })),
+        CaptureUpdate::Cancelled(message) => {
+            Some(serde_json::json!({"type": "cancel", "message": message}))
+        }
+    }
+}
+
+fn check_gestures() -> Result<(), String> {
+    let mut text = String::new();
+    std::io::stdin()
+        .read_to_string(&mut text)
+        .map_err(|err| err.to_string())?;
+    parse_config(&text).map(|_| ())
+}
+
+fn capture_stroke(trigger_name: &str) -> Result<(), String> {
+    let requested = TriggerButton::parse(trigger_name)
+        .ok_or_else(|| format!("unknown trigger {trigger_name}"))?;
+    match take_sample_from_demo(requested) {
+        Ok(SampleAsk::Line(line)) => {
+            println!("{line}");
+            let _ = std::io::stdout().flush();
+            Ok(())
+        }
+        Ok(SampleAsk::Offline) => capture_stroke_locally(requested),
+        Err(message) => {
+            emit_capture_line(&serde_json::json!({"type": "cancel", "message": message}));
+            Err(message)
+        }
+    }
+}
+
+enum SampleAsk {
+    Offline,
+    Line(String),
+}
+
+/// 演示已经抓住鼠标时，向它要下一笔，而不是再抢一次设备。
+fn take_sample_from_demo(requested: TriggerButton) -> Result<SampleAsk, String> {
+    let mut stream = match UnixStream::connect(runtime_socket(current_uid())) {
+        Ok(stream) => stream,
+        Err(_) => return Ok(SampleAsk::Offline),
+    };
+    stream
+        .set_write_timeout(Some(Duration::from_secs(1)))
+        .map_err(|err| err.to_string())?;
+    stream
+        .write_all(b"{\"type\":\"capture\"}\n")
+        .map_err(|err| err.to_string())?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .map_err(|err| err.to_string())?;
+    let mut reader = BufReader::new(stream);
+    let first = read_sample_line(
+        &mut reader,
+        "正在运行的演示没有回传轨迹。请先重新启动演示。",
+    )?;
+    if first.contains("\"offline\"") {
+        return Ok(SampleAsk::Offline);
+    }
+    if !first.contains("\"ready\"") {
+        return Err("正在运行的演示没有回传轨迹。请先重新启动演示。".into());
+    }
+    let button = GestureConfig::load(&config_path())
+        .map(|config| config.trigger)
+        .unwrap_or(requested);
+    emit_capture_line(&serde_json::json!({
+        "type": "status",
+        "message": format!("按住{}，在屏幕上画一笔，然后松开。", trigger_phrase(button)),
+    }));
+    reader
+        .get_mut()
+        .set_read_timeout(Some(Duration::from_secs(9)))
+        .map_err(|err| err.to_string())?;
+    Ok(SampleAsk::Line(read_sample_line(
+        &mut reader,
+        "8 秒内没有画完一笔",
+    )?))
+}
+
+fn read_sample_line(reader: &mut BufReader<UnixStream>, timed_out: &str) -> Result<String, String> {
+    let mut line = String::new();
+    match reader.read_line(&mut line) {
+        Ok(0) => Err("正在运行的演示没有回传轨迹。请先重新启动演示。".into()),
+        Ok(_) => Ok(line.trim().to_string()),
+        Err(err) if err.kind() == ErrorKind::TimedOut || err.kind() == ErrorKind::WouldBlock => {
+            Err(timed_out.to_string())
+        }
+        Err(err) => Err(err.to_string()),
+    }
+}
+
+fn capture_stroke_locally(trigger: TriggerButton) -> Result<(), String> {
+    let mut grabbed = match grab_mice() {
+        Ok(devices) => devices,
+        Err(message) => {
+            emit_capture_line(&serde_json::json!({"type": "error", "message": message}));
+            return Err(message);
+        }
+    };
+    emit_capture_line(&serde_json::json!({
+        "type": "status",
+        "message": format!("鼠标已暂时独占。按住{}，画一笔后松开。", trigger_phrase(trigger)),
+    }));
+    let value = read_stroke(&mut grabbed, trigger.evdev_code());
+    drop(grabbed);
+    emit_capture_line(&value);
+    if value.get("type").and_then(|kind| kind.as_str()) == Some("error") {
+        return Err(value
+            .get("message")
+            .and_then(|message| message.as_str())
+            .unwrap_or("capture failed")
+            .to_string());
+    }
+    Ok(())
+}
+
+fn trigger_phrase(trigger: TriggerButton) -> &'static str {
+    match trigger {
+        TriggerButton::Right => "右键",
+        TriggerButton::Middle => "中键",
+        TriggerButton::Forward => "侧键前进",
+        TriggerButton::Back => "侧键后退",
+    }
+}
+
+fn first_side_request(bytes: &[u8]) -> Option<&'static str> {
+    let text = String::from_utf8_lossy(bytes);
+    if text.contains("\"capture\"") {
+        Some("capture")
+    } else if text.contains("\"reload\"") {
+        Some("reload")
+    } else {
+        None
+    }
+}
+
+fn grab_mice() -> Result<Vec<GrabbedDevice>, String> {
+    let mut grabbed = Vec::new();
+    let mut missed = false;
+    for (_path, mut device) in evdev::enumerate() {
+        if !is_physical_mouse(&device) {
+            continue;
+        }
+        if set_nonblocking(device.as_raw_fd()).is_err() || device.grab().is_err() {
+            missed = true;
+            continue;
+        }
+        grabbed.push(GrabbedDevice(device));
+    }
+    if grabbed.is_empty() || missed {
+        return Err("鼠标被占用。请先在面板上暂停 Strokelet。".into());
+    }
+    Ok(grabbed)
+}
+
+fn is_physical_mouse(device: &Device) -> bool {
+    let name = device.name().unwrap_or("").to_ascii_lowercase();
+    if name.contains("strokelet") || name.contains("ydotool") {
+        return false;
+    }
+    device.supported_relative_axes().is_some_and(|axes| {
+        axes.contains(RelativeAxisCode::REL_X) && axes.contains(RelativeAxisCode::REL_Y)
+    })
+}
+
+fn read_stroke(devices: &mut [GrabbedDevice], trigger: u16) -> serde_json::Value {
+    let started = Instant::now();
+    let mut pressed_at: Option<Instant> = None;
+    let mut down = false;
+    let mut x = 0.0;
+    let mut y = 0.0;
+    let mut pending_x = 0.0;
+    let mut pending_y = 0.0;
+    let mut points = vec![(0.0, 0.0)];
+    loop {
+        let limit = if pressed_at.is_some() {
+            Duration::from_millis(2500)
+        } else {
+            Duration::from_secs(5)
+        };
+        let origin = pressed_at.unwrap_or(started);
+        let remaining = limit.saturating_sub(origin.elapsed());
+        if remaining.is_zero() {
+            let message = if down {
+                "时间太长，这次没有保存"
+            } else {
+                "5 秒内没有按下触发键"
+            };
+            return serde_json::json!({"type": "cancel", "message": message});
+        }
+        let mut fds: Vec<nix::libc::pollfd> = devices
+            .iter()
+            .map(|device| nix::libc::pollfd {
+                fd: device.0.as_raw_fd(),
+                events: nix::libc::POLLIN,
+                revents: 0,
+            })
+            .collect();
+        let timeout = i32::try_from(remaining.as_millis()).unwrap_or(i32::MAX);
+        let ready =
+            unsafe { nix::libc::poll(fds.as_mut_ptr(), fds.len() as nix::libc::nfds_t, timeout) };
+        if ready < 0 {
+            let err = std::io::Error::last_os_error();
+            if err.kind() == ErrorKind::Interrupted {
+                continue;
+            }
+            return serde_json::json!({"type": "error", "message": err.to_string()});
+        }
+        if ready == 0 {
+            continue;
+        }
+        for (index, slot) in fds.iter().enumerate() {
+            if slot.revents & nix::libc::POLLIN == 0 {
+                continue;
+            }
+            let events = match devices[index].0.fetch_events() {
+                Ok(events) => events,
+                Err(err) if err.kind() == ErrorKind::WouldBlock => continue,
+                Err(err) => {
+                    return serde_json::json!({"type": "error", "message": err.to_string()});
+                }
+            };
+            for event in events {
+                if event.event_type() == EventType::RELATIVE && down {
+                    if event.code() == RelativeAxisCode::REL_X.0 {
+                        pending_x += f64::from(event.value());
+                    } else if event.code() == RelativeAxisCode::REL_Y.0 {
+                        pending_y += f64::from(event.value());
+                    }
+                } else if event.event_type() == EventType::SYNCHRONIZATION
+                    && event.code() == SynchronizationCode::SYN_REPORT.0
+                    && down
+                {
+                    if pending_x != 0.0 || pending_y != 0.0 {
+                        x += pending_x;
+                        y += pending_y;
+                        if points.len() < 2048 {
+                            points.push((x, y));
+                        }
+                        pending_x = 0.0;
+                        pending_y = 0.0;
+                    }
+                } else if event.event_type() == EventType::KEY && event.code() == trigger {
+                    if event.value() == 1 && !down {
+                        down = true;
+                        pressed_at = Some(Instant::now());
+                        x = 0.0;
+                        y = 0.0;
+                        points = vec![(0.0, 0.0)];
+                    } else if event.value() == 0 && down {
+                        let length = points.windows(2).fold(0.0, |total, pair| {
+                            total + (pair[1].0 - pair[0].0).hypot(pair[1].1 - pair[0].1)
+                        });
+                        if length < 80.0 || points.len() < 2 {
+                            return serde_json::json!({"type": "cancel", "message": "轨迹太短"});
+                        }
+                        return serde_json::json!({"type": "stroke", "points": points});
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn emit_capture_line(value: &serde_json::Value) {
+    let mut stdout = std::io::stdout().lock();
+    let _ = writeln!(stdout, "{value}");
+    let _ = stdout.flush();
 }
 
 fn print_help() {
@@ -87,12 +507,17 @@ Commands:
   status
   list-devices
   settings
+  capture-chord
+  capture-stroke [right|middle|forward|back]
+  check-gestures
   run --device PATH --uid UID --session ID [--timeout-seconds 120]
       [--passthrough-only] [--inject-copy]
 
 Grabbing waits until the extension is ready, the session is active and
 unlocked, and no keys are held. The default timeout is 120 seconds.
-This is a foreground demo, not a system service."
+This is a foreground demo, not a system service.
+capture-chord exclusively grabs keyboards until one shortcut is recorded.
+The settings window starts it; Ctrl+C there cannot reach the shell until it exits."
     );
 }
 
@@ -244,6 +669,7 @@ fn drive(
     let mut ledger = InjectionLedger::new();
     let mut gesture_id = 1u64;
     let mut grabbed = false;
+    let mut sample: Option<SampleWait> = None;
     let started = Instant::now();
     while started.elapsed() < opts.timeout {
         if STOP.load(Ordering::Relaxed) {
@@ -253,28 +679,47 @@ fn drive(
         let now_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         match listener.accept() {
             Ok((mut stream, _)) if peer_is_target(&stream, opts.uid) => {
-                let _ = stream.set_read_timeout(Some(Duration::from_millis(20)));
+                let _ = stream.set_read_timeout(Some(Duration::from_millis(80)));
                 let mut buf = [0u8; 1024];
                 let early = stream.read(&mut buf);
                 let _ = stream.set_nonblocking(true);
-                if let Ok(size) = early
-                    && size > 0
-                    && String::from_utf8_lossy(&buf[..size]).contains("\"reload\"")
+                match early
+                    .ok()
+                    .filter(|size| *size > 0)
+                    .and_then(|size| first_side_request(&buf[..size]))
                 {
-                    match GestureConfig::load(&config_path()) {
+                    Some("capture") if grabbed => {
+                        if stream.write_all(b"{\"type\":\"ready\"}\n").is_ok() {
+                            reply_sample(
+                                &mut sample,
+                                &serde_json::json!({"type": "cancel", "message": "已开始另一次录制"}),
+                            );
+                            sample = Some(SampleWait {
+                                stream,
+                                started: Instant::now(),
+                            });
+                            eprintln!("strokelet: waiting for one sample stroke");
+                        }
+                    }
+                    Some("capture") => {
+                        let _ = stream.write_all(b"{\"type\":\"offline\"}\n");
+                    }
+                    Some("reload") => match GestureConfig::load(&config_path()) {
                         Ok(next) => {
                             *rules = next;
                             processor.set_trigger(rules.trigger.evdev_code());
                             eprintln!("strokelet: reloaded gesture rules");
                         }
                         Err(err) => eprintln!("strokelet: reload rejected: {err}"),
+                    },
+                    _ if client.is_none() => {
+                        let _ = (&stream).write_all(Link::hello().as_bytes());
+                        link = Link::new();
+                        link.connected(now_ms);
+                        codec = LineCodec::new();
+                        client = Some(stream);
                     }
-                } else if client.is_none() {
-                    let _ = (&stream).write_all(Link::hello().as_bytes());
-                    link = Link::new();
-                    link.connected(now_ms);
-                    codec = LineCodec::new();
-                    client = Some(stream);
+                    _ => {}
                 }
             }
             Ok((stream, _)) => drop(stream),
@@ -334,12 +779,17 @@ fn drive(
                 PollAction::None => {}
             }
         }
+        poll_sample(&mut sample);
         let facts = read_session(&opts.session, opts.uid);
         let session_ok = is_active_unlocked(facts);
         let hold = !session_ok || link.is_paused();
         if hold && grabbed {
             let _ = device.ungrab();
             grabbed = false;
+            reply_sample(
+                &mut sample,
+                &serde_json::json!({"type": "cancel", "message": "演示放开了鼠标，这次没有保存"}),
+            );
             eprintln!("strokelet: session or pause released the mouse");
         }
         if !grabbed && grab_allowed(link.is_ready() && !link.is_paused(), session_ok, false) {
@@ -362,6 +812,7 @@ fn drive(
                                 opts,
                                 rules,
                                 gesture_id: &mut gesture_id,
+                                sample: &mut sample,
                             },
                             event,
                             now_ms,
@@ -378,6 +829,11 @@ fn drive(
     Ok(())
 }
 
+struct SampleWait {
+    stream: UnixStream,
+    started: Instant,
+}
+
 struct Live<'a> {
     processor: &'a mut FrameProcessor,
     link: &'a mut Link,
@@ -388,6 +844,7 @@ struct Live<'a> {
     opts: &'a RunOpts,
     rules: &'a GestureConfig,
     gesture_id: &'a mut u64,
+    sample: &'a mut Option<SampleWait>,
 }
 
 fn publish_gesture(
@@ -421,25 +878,52 @@ fn publish_gesture(
         let injection = live
             .ledger
             .decide(id, live.opts.inject_copy, decision, desktop);
-        let outcome = match (decision, injection) {
-            (Decision::RightClick, _) => Outcome::Click,
-            (Decision::Stroke(direction), Injection::CopyOnce) => {
-                if let Some(chord) = live.rules.chord_for(direction)
-                    && live.keyboard.send_chord(chord).is_ok()
-                {
-                    Outcome::CopyInjected
-                } else {
-                    let _ = live.keyboard.release_owned_keys();
-                    Outcome::Unmatched
-                }
+        let sampling = live.sample.is_some() && decision != Decision::None;
+        if sampling {
+            reply_sample(
+                live.sample,
+                &sample_payload(decision, live.processor.stroke_points()),
+            );
+        }
+        let mut screen_name = None;
+        let outcome = if sampling {
+            match decision {
+                Decision::RightClick => Outcome::Click,
+                _ => Outcome::Unmatched,
             }
-            _ => Outcome::Unmatched,
+        } else {
+            match (decision, injection) {
+                (Decision::RightClick, _) => Outcome::Click,
+                (Decision::Stroke, Injection::CopyOnce) => {
+                    let matched = live
+                        .rules
+                        .rule_for_points(live.processor.stroke_points())
+                        .map(|rule| (rule.chord.clone(), rule.screen_name.clone()));
+                    if let Some((chord, name)) = matched
+                        && live.keyboard.send_chord(&chord).is_ok()
+                    {
+                        if !name.is_empty() {
+                            screen_name = Some(name);
+                        }
+                        Outcome::CopyInjected
+                    } else {
+                        let _ = live.keyboard.release_owned_keys();
+                        Outcome::Unmatched
+                    }
+                }
+                _ => Outcome::Unmatched,
+            }
         };
-        eprintln!("strokelet: decision={decision:?} outcome={outcome:?}");
+        if sampling {
+            eprintln!("strokelet: decision={decision:?} outcome=Sampled");
+        } else {
+            eprintln!("strokelet: decision={decision:?} outcome={outcome:?}");
+        }
         let line = if outcome == Outcome::Unmatched && decision != Decision::RightClick {
             live.link.cancel(id, CancelReason::Unmatched)
         } else {
-            live.link.end(id, outcome)
+            live.link
+                .end_with_name(id, outcome, screen_name.as_deref())
         };
         if let Ok(line) = line {
             eprintln!("strokelet: {line}");
@@ -447,6 +931,52 @@ fn publish_gesture(
         }
     }
     Ok(())
+}
+
+fn poll_sample(sample: &mut Option<SampleWait>) {
+    let disconnected = sample.as_mut().is_some_and(|wait| {
+        let mut buf = [0u8; 64];
+        match wait.stream.read(&mut buf) {
+            Ok(0) => true,
+            Err(err) if err.kind() != ErrorKind::WouldBlock && err.kind() != ErrorKind::TimedOut => {
+                true
+            }
+            _ => false,
+        }
+    });
+    if disconnected {
+        sample.take();
+        eprintln!("strokelet: sample stroke cancelled");
+        return;
+    }
+    if sample
+        .as_ref()
+        .is_some_and(|wait| wait.started.elapsed() >= Duration::from_secs(8))
+    {
+        reply_sample(
+            sample,
+            &serde_json::json!({"type": "cancel", "message": "8 秒内没有画完一笔"}),
+        );
+        eprintln!("strokelet: sample stroke timed out");
+    }
+}
+
+fn reply_sample(sample: &mut Option<SampleWait>, value: &serde_json::Value) {
+    let Some(mut wait) = sample.take() else {
+        return;
+    };
+    let _ = wait.stream.set_nonblocking(false);
+    let _ = wait.stream.set_write_timeout(Some(Duration::from_secs(1)));
+    let line = format!("{value}\n");
+    let _ = wait.stream.write_all(line.as_bytes());
+}
+
+fn sample_payload(decision: Decision, points: &[(f64, f64)]) -> serde_json::Value {
+    match decision {
+        Decision::Stroke => serde_json::json!({"type": "stroke", "points": points}),
+        Decision::RightClick => serde_json::json!({"type": "cancel", "message": "轨迹太短"}),
+        _ => serde_json::json!({"type": "cancel", "message": "这次没有保存"}),
+    }
 }
 
 fn send_line(client: &mut Option<UnixStream>, line: &str) {
@@ -653,4 +1183,19 @@ fn next_value(iter: &mut std::slice::Iter<String>, flag: &str) -> Result<String,
     iter.next()
         .cloned()
         .ok_or_else(|| format!("{flag} needs a value"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::first_side_request;
+
+    #[test]
+    fn capture_and_reload_stay_off_the_extension_socket() {
+        assert_eq!(
+            first_side_request(br#"{"type":"capture"}"#),
+            Some("capture")
+        );
+        assert_eq!(first_side_request(br#"{"type":"reload"}"#), Some("reload"));
+        assert_eq!(first_side_request(br#"{"type":"ready","version":1}"#), None);
+    }
 }

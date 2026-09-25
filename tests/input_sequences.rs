@@ -1,7 +1,7 @@
 use evdev::{EventType, KeyCode, RelativeAxisCode};
 use strokelet::{
-    Decision, DeviceProfile, DeviceReject, Direction, FrameProcessor, Limits, classify_device,
-    event_tuple, grab_allowed, key_event, rel_event, syn_dropped, syn_report, virtual_mouse_codes,
+    Decision, DeviceProfile, DeviceReject, FrameProcessor, Limits, classify_device, event_tuple,
+    grab_allowed, key_event, rel_event, syn_dropped, syn_report, virtual_mouse_codes,
 };
 
 fn processor() -> FrameProcessor {
@@ -106,7 +106,7 @@ fn upward_stroke_forwards_motion_without_right_button() {
         120,
     );
     assert!(release.is_empty());
-    assert_eq!(proc.last_decision(), Some(Decision::Stroke(Direction::Up)));
+    assert_eq!(proc.last_decision(), Some(Decision::Stroke));
 }
 
 #[test]
@@ -127,7 +127,7 @@ fn long_running_demo_still_times_gesture_from_press() {
         &[key_event(KeyCode::BTN_RIGHT, 0), syn_report()],
         10_120,
     );
-    assert_eq!(proc.last_decision(), Some(Decision::Stroke(Direction::Up)));
+    assert_eq!(proc.last_decision(), Some(Decision::Stroke));
 }
 
 #[test]
@@ -252,7 +252,7 @@ fn merged_frame_counts_as_one_vector() {
         &[key_event(KeyCode::BTN_RIGHT, 0), syn_report()],
         50,
     );
-    assert_eq!(proc.last_decision(), Some(Decision::Stroke(Direction::Up)));
+    assert_eq!(proc.last_decision(), Some(Decision::Stroke));
 }
 
 #[test]

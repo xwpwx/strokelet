@@ -36,7 +36,7 @@ scripts/run-demo.sh --device /dev/input/by-id/你的鼠标 --uid "$(id -u)" --se
 
 默认前台运行 120 秒，可以用 `--timeout-seconds` 加长。复制注入由该脚本打开；直接调用 `strokelet run` 时默认关闭，需要 `--inject-copy`。`--passthrough-only` 只透传。
 
-改规则：另开一个终端，运行 `./target/debug/strokelet settings`。窗口不抓鼠标。保存后写入 `~/.config/strokelet/gestures.json`；如果演示正在运行，会让它重新读这份文件。没有配置文件时，默认仍是右键上划 Ctrl+C。
+改规则：另开一个终端，运行 `./target/debug/strokelet settings`。编辑规则时先「画出轨迹」，再「按下快捷键」。屏幕上显示可以填一个名字，例如「复制」；留空则识别成功后不显示文字。演示正在运行时，按住触发键在屏幕上画一笔即可，不用先暂停。演示没开时，画轨迹会短暂独占鼠标。保存后写入 `~/.config/strokelet/gestures.json`；如果演示正在运行，会让它重新读这份文件。没有配置文件时，默认仍是右键直线上划 Ctrl+C。以前只写了方向的配置还会当成直线用。
 
 暂停：点面板上的「划」，打开「暂停」。停止：等超时，或在运行终端按 Ctrl+C。卸载：`scripts/remove-extension.sh`，它只删除带本项目标记的扩展目录。
 

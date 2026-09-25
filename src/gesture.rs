@@ -12,20 +12,13 @@ pub enum Direction {
 pub enum Decision {
     None,
     RightClick,
-    Stroke(Direction),
+    Stroke,
     Cancel,
 }
 
 impl Decision {
     pub fn is_stroke(self) -> bool {
-        matches!(self, Decision::Stroke(_))
-    }
-
-    pub fn direction(self) -> Option<Direction> {
-        match self {
-            Decision::Stroke(direction) => Some(direction),
-            _ => None,
-        }
+        matches!(self, Decision::Stroke)
     }
 }
 
@@ -66,14 +59,9 @@ pub struct Gesture {
     y: f64,
     path_len: f64,
     max_distance: f64,
-    max_abs_x: f64,
-    max_abs_y: f64,
+    points: Vec<(f64, f64)>,
     elapsed_ms: u64,
 }
-
-const MIN_STRAIGHTNESS: f64 = 0.85;
-const LATERAL_RATIO: f64 = 0.30;
-const LATERAL_FLOOR_COUNTS: f64 = 12.0;
 
 impl Gesture {
     pub fn new(limits: Limits) -> Self {
@@ -84,10 +72,13 @@ impl Gesture {
             y: 0.0,
             path_len: 0.0,
             max_distance: 0.0,
-            max_abs_x: 0.0,
-            max_abs_y: 0.0,
+            points: Vec::new(),
             elapsed_ms: 0,
         }
+    }
+
+    pub fn points(&self) -> &[(f64, f64)] {
+        &self.points
     }
 
     pub fn press(&mut self) {
@@ -99,8 +90,8 @@ impl Gesture {
         self.y = 0.0;
         self.path_len = 0.0;
         self.max_distance = 0.0;
-        self.max_abs_x = 0.0;
-        self.max_abs_y = 0.0;
+        self.points.clear();
+        self.points.push((0.0, 0.0));
         self.elapsed_ms = 0;
     }
 
@@ -113,8 +104,9 @@ impl Gesture {
         self.y += dy;
         self.path_len += dx.hypot(dy);
         self.max_distance = self.max_distance.max(self.x.hypot(self.y));
-        self.max_abs_x = self.max_abs_x.max(self.x.abs());
-        self.max_abs_y = self.max_abs_y.max(self.y.abs());
+        if self.points.len() < 2048 {
+            self.points.push((self.x, self.y));
+        }
         if self.phase == Phase::Pending && self.max_distance > self.limits.start_counts {
             self.phase = Phase::Drawing;
         }
@@ -165,40 +157,19 @@ impl Gesture {
                     Decision::Cancel
                 }
             }
-            Phase::Drawing => self
-                .matched_direction()
-                .map(Decision::Stroke)
-                .unwrap_or(Decision::Cancel),
+            Phase::Drawing => {
+                if self.path_len >= self.limits.min_up_counts {
+                    Decision::Stroke
+                } else {
+                    Decision::Cancel
+                }
+            }
         }
     }
 
     fn expire_if_needed(&mut self) {
         if self.phase == Phase::Drawing && self.elapsed_ms > self.limits.max_duration_ms {
             self.phase = Phase::CancelledUntilRelease;
-        }
-    }
-
-    fn matched_direction(&self) -> Option<Direction> {
-        if self.path_len <= 0.0 {
-            return None;
-        }
-        let min = self.limits.min_up_counts;
-        let (direction, net, lateral) = if self.y <= -min && self.x.abs() < self.y.abs() {
-            (Direction::Up, -self.y, self.max_abs_x)
-        } else if self.y >= min && self.x.abs() < self.y.abs() {
-            (Direction::Down, self.y, self.max_abs_x)
-        } else if self.x <= -min && self.y.abs() < self.x.abs() {
-            (Direction::Left, -self.x, self.max_abs_y)
-        } else if self.x >= min && self.y.abs() < self.x.abs() {
-            (Direction::Right, self.x, self.max_abs_y)
-        } else {
-            return None;
-        };
-        let lateral_limit = (net * LATERAL_RATIO).max(LATERAL_FLOOR_COUNTS);
-        if lateral <= lateral_limit && net / self.path_len >= MIN_STRAIGHTNESS {
-            Some(direction)
-        } else {
-            None
         }
     }
 }

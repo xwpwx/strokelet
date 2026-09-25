@@ -1,3 +1,4 @@
+mod capture;
 mod config;
 mod copy;
 mod copy_gate;
@@ -7,12 +8,15 @@ mod protocol;
 mod runtime;
 mod server;
 mod session;
+mod stroke;
 
+pub use capture::{CaptureUpdate, ChordCapture};
 pub use config::{
     ConfigError, GestureConfig, TriggerButton, config_path, parse_config, write_config,
 };
 pub use copy::{
-    Chord, CopyOutput, EmitError, KeySink, Modifier, OutputEvent, chord_device_codes, key_names,
+    Chord, CopyOutput, EmitError, KeySink, OutputEvent, chord_device_codes, evdev_from_gtk_keycode,
+    key_names,
 };
 pub use copy_gate::{CopyGate, DesktopState, Injection, Modifiers, Observation, SessionState};
 pub use gesture::{Decision, Direction, Gesture, Limits};
@@ -30,6 +34,7 @@ pub use server::{
     peer_is_target, peer_uid, validate_runtime_path,
 };
 pub use session::{SessionFacts, is_active_unlocked, session_state};
+pub use stroke::{MAX_RULES, best_match, conflicts, straight_points};
 
 pub fn status_message() -> &'static str {
     "strokelet: demo"

@@ -27,6 +27,54 @@ export class GestureOverlay {
         this._visible = false;
         this._sampleId = 0;
         this._selfTest = false;
+        this._nameId = 0;
+        this._name = new St.Label({
+            reactive: false,
+            can_focus: false,
+            visible: false,
+            style: 'font-size: 28px; font-weight: bold; color: white; background-color: rgba(0, 0, 0, 0.72); padding: 8px 14px; border-radius: 10px;',
+        });
+        Main.uiGroup.add_child(this._name);
+        Main.uiGroup.set_child_above_sibling(this._name, this._area);
+    }
+
+    finish(message) {
+        if (this._activeId !== message.id)
+            return;
+        this.end(message.id);
+        if (message.type === 'end' && typeof message.name === 'string' && message.name.length > 0)
+            this.showName(message.name);
+    }
+
+    showName(text) {
+        if (!this._name || !text)
+            return;
+        this._hideName();
+        this._name.text = text;
+        this._name.show();
+        const [pointerX, pointerY] = global.get_pointer();
+        let width = [...text].length * 32 + 28;
+        let height = 52;
+        try {
+            const [minWidth] = this._name.get_preferred_width(-1);
+            const [minHeight] = this._name.get_preferred_height(minWidth);
+            if (minWidth > 0)
+                width = minWidth;
+            if (minHeight > 0)
+                height = minHeight;
+        } catch {
+        }
+        const margin = 12;
+        let x = pointerX + 18;
+        let y = pointerY - height - 16;
+        x = Math.max(margin, Math.min(x, global.stage.width - width - margin));
+        y = Math.max(margin, Math.min(y, global.stage.height - height - margin));
+        this._name.set_position(Math.round(x), Math.round(y));
+        this._nameId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1200, () => {
+            this._nameId = 0;
+            this._name?.hide();
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     begin(id) {
@@ -37,6 +85,7 @@ export class GestureOverlay {
         this._visible = false;
         this._activeId = id;
         this._selfTest = false;
+        this._hideName();
         this._startSampling();
     }
 
@@ -52,7 +101,16 @@ export class GestureOverlay {
         this._selfTest = false;
         this._points = [];
         this._visible = false;
+        this._hideName();
         this._area.queue_repaint();
+    }
+
+    _hideName() {
+        if (this._nameId) {
+            GLib.source_remove(this._nameId);
+            this._nameId = 0;
+        }
+        this._name?.hide();
     }
 
     selfTest() {
@@ -68,8 +126,11 @@ export class GestureOverlay {
 
     destroy() {
         this._stopSampling();
+        this._hideName();
         if (this._selfTestId)
             GLib.source_remove(this._selfTestId);
+        this._name?.destroy();
+        this._name = null;
         const stage = global.stage;
         if (this._stageId)
             stage.disconnect(this._stageId);

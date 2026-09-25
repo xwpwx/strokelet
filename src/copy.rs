@@ -13,74 +13,92 @@ pub trait KeySink {
     fn emit(&mut self, event: OutputEvent) -> Result<(), EmitError>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Modifier {
-    Ctrl,
-    Shift,
-    Alt,
-    Super,
+/// GTK 的键码比 evdev 大 8。C 是 54→46，左 Ctrl 是 37→29，左 Shift 是 50→42。
+pub fn evdev_from_gtk_keycode(keycode: u16) -> Option<u16> {
+    keycode.checked_sub(8)
 }
 
-impl Modifier {
-    pub fn code(self) -> u16 {
-        match self {
-            Modifier::Ctrl => KeyCode::KEY_LEFTCTRL.0,
-            Modifier::Shift => KeyCode::KEY_LEFTSHIFT.0,
-            Modifier::Alt => KeyCode::KEY_LEFTALT.0,
-            Modifier::Super => KeyCode::KEY_LEFTMETA.0,
-        }
-    }
+const MODIFIER_CODES: [u16; 8] = [
+    KeyCode::KEY_LEFTCTRL.0,
+    KeyCode::KEY_RIGHTCTRL.0,
+    KeyCode::KEY_LEFTSHIFT.0,
+    KeyCode::KEY_RIGHTSHIFT.0,
+    KeyCode::KEY_LEFTALT.0,
+    KeyCode::KEY_RIGHTALT.0,
+    KeyCode::KEY_LEFTMETA.0,
+    KeyCode::KEY_RIGHTMETA.0,
+];
 
-    fn parse(name: &str) -> Option<Self> {
-        match name {
-            "ctrl" => Some(Modifier::Ctrl),
-            "shift" => Some(Modifier::Shift),
-            "alt" => Some(Modifier::Alt),
-            "super" => Some(Modifier::Super),
-            _ => None,
-        }
-    }
-}
+const MACHINE_KEYS: [u16; 6] = [
+    KeyCode::KEY_SYSRQ.0,
+    KeyCode::KEY_POWER.0,
+    KeyCode::KEY_SLEEP.0,
+    KeyCode::KEY_WAKEUP.0,
+    KeyCode::KEY_SUSPEND.0,
+    KeyCode::KEY_POWER2.0,
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Chord {
-    modifiers: Vec<Modifier>,
-    key_name: String,
+    modifiers: Vec<u16>,
     key_code: u16,
+    key_label: String,
 }
 
 impl Chord {
-    pub fn modifiers(&self) -> &[Modifier] {
+    pub fn modifier_codes(&self) -> &[u16] {
         &self.modifiers
     }
 
     pub fn key_name(&self) -> &str {
-        &self.key_name
+        &self.key_label
     }
 
     pub fn key_code(&self) -> u16 {
         self.key_code
     }
 
+    /// 旧配置里的名字。`ctrl` 固定是左 Ctrl，不会和右 Ctrl 合成同一个键。
     pub fn parse(modifiers: &[String], key: &str) -> Result<Self, String> {
         if modifiers.len() > 4 {
             return Err("a shortcut can have at most 4 modifiers".into());
         }
-        let mut parsed = Vec::new();
+        let mut codes = Vec::new();
         for name in modifiers {
-            let modifier =
-                Modifier::parse(name).ok_or_else(|| format!("unknown modifier {name}"))?;
-            if parsed.contains(&modifier) {
+            let code = named_modifier(name).ok_or_else(|| format!("unknown modifier {name}"))?;
+            if codes.contains(&code) {
                 return Err(format!("duplicate modifier {name}"));
             }
-            parsed.push(modifier);
+            codes.push(code);
         }
-        parsed.sort_by_key(|modifier| modifier.code());
         let key_code = key_code(key).ok_or_else(|| format!("unknown key {key}"))?;
+        Self::from_codes(&codes, key_code, key)
+    }
+
+    pub fn from_codes(modifiers: &[u16], key: u16, label: &str) -> Result<Self, String> {
+        if modifiers.len() > 4 {
+            return Err("a shortcut can have at most 4 modifiers".into());
+        }
+        if label.is_empty() {
+            return Err("shortcut label is empty".into());
+        }
+        let mut codes = modifiers.to_vec();
+        codes.sort_unstable();
+        if codes.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err("duplicate modifier".into());
+        }
+        for code in &codes {
+            if !is_modifier(*code) {
+                return Err(format!("not a modifier key {code}"));
+            }
+        }
+        if !is_main_key(key) {
+            return Err(format!("key {key} cannot be a shortcut"));
+        }
         Ok(Self {
-            modifiers: parsed,
-            key_name: key.to_string(),
-            key_code,
+            modifiers: codes,
+            key_code: key,
+            key_label: label.to_string(),
         })
     }
 }
@@ -96,14 +114,76 @@ pub fn key_names() -> impl Iterator<Item = &'static str> {
 }
 
 pub fn chord_device_codes() -> Vec<u16> {
-    let mut codes = vec![
-        Modifier::Ctrl.code(),
-        Modifier::Shift.code(),
-        Modifier::Alt.code(),
-        Modifier::Super.code(),
-    ];
-    codes.extend(KEYS.iter().map(|(_, code)| *code));
+    let mut codes = Vec::new();
+    for code in 1..=248 {
+        if is_device_key(code) {
+            codes.push(code);
+        }
+    }
+    for code in 0x160..=0x27a {
+        if is_device_key(code) {
+            codes.push(code);
+        }
+    }
     codes
+}
+
+fn named_modifier(name: &str) -> Option<u16> {
+    match name {
+        "ctrl" => Some(KeyCode::KEY_LEFTCTRL.0),
+        "shift" => Some(KeyCode::KEY_LEFTSHIFT.0),
+        "alt" => Some(KeyCode::KEY_LEFTALT.0),
+        "super" => Some(KeyCode::KEY_LEFTMETA.0),
+        _ => None,
+    }
+}
+
+pub(crate) fn is_modifier(code: u16) -> bool {
+    MODIFIER_CODES.contains(&code)
+}
+
+pub(crate) fn modifier_label(code: u16) -> Option<&'static str> {
+    match KeyCode(code) {
+        KeyCode::KEY_LEFTCTRL => Some("Ctrl"),
+        KeyCode::KEY_RIGHTCTRL => Some("Right Ctrl"),
+        KeyCode::KEY_LEFTSHIFT => Some("Shift"),
+        KeyCode::KEY_RIGHTSHIFT => Some("Right Shift"),
+        KeyCode::KEY_LEFTALT => Some("Alt"),
+        KeyCode::KEY_RIGHTALT => Some("Right Alt"),
+        KeyCode::KEY_LEFTMETA => Some("Super"),
+        KeyCode::KEY_RIGHTMETA => Some("Right Super"),
+        _ => None,
+    }
+}
+
+pub(crate) fn is_shortcut_key(code: u16) -> bool {
+    is_main_key(code)
+}
+
+fn is_machine_key(code: u16) -> bool {
+    MACHINE_KEYS.contains(&code)
+}
+
+fn is_button(code: u16) -> bool {
+    (0x100..=0x109).contains(&code)
+        || (0x110..=0x117).contains(&code)
+        || (0x120..=0x12f).contains(&code)
+        || (0x130..=0x13e).contains(&code)
+        || (0x140..=0x14f).contains(&code)
+        || (0x150..=0x151).contains(&code)
+        || (0x2c0..=0x2e7).contains(&code)
+}
+
+fn is_key_range(code: u16) -> bool {
+    (1..=248).contains(&code) || (0x160..=0x27a).contains(&code)
+}
+
+fn is_main_key(code: u16) -> bool {
+    is_key_range(code) && !is_modifier(code) && !is_machine_key(code) && !is_button(code)
+}
+
+fn is_device_key(code: u16) -> bool {
+    is_key_range(code) && !is_machine_key(code) && !is_button(code)
 }
 
 /// 按修饰键然后主键的顺序按下，再按相反顺序松开。失败时只松开已经按下的键。
@@ -142,16 +222,16 @@ impl<S: KeySink> CopyOutput<S> {
     }
 
     fn write_chord(&mut self, chord: &Chord) -> Result<(), EmitError> {
-        for modifier in &chord.modifiers {
-            self.press(modifier.code())?;
+        for code in &chord.modifiers {
+            self.press(*code)?;
             self.syn()?;
         }
         self.press(chord.key_code)?;
         self.syn()?;
         self.release_one(chord.key_code)?;
         self.syn()?;
-        for modifier in chord.modifiers.iter().rev() {
-            self.release_one(modifier.code())?;
+        for code in chord.modifiers.iter().rev() {
+            self.release_one(*code)?;
             self.syn()?;
         }
         Ok(())

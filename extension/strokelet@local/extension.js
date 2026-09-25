@@ -75,7 +75,7 @@ export default class StrokeletExtension extends Extension {
             return;
         }
         if (message.type === 'end' || message.type === 'cancel') {
-            this._overlay.end(message.id);
+            this._overlay.finish(message);
         }
     }
 
