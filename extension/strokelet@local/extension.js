@@ -5,12 +5,23 @@ import GLib from 'gi://GLib';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-import {StrokeletIndicator} from './indicator.js';
-import {GestureOverlay} from './overlay.js';
-import {DemoTransport} from './transport.js';
-
 export default class StrokeletExtension extends Extension {
     enable() {
+        this._closed = false;
+        this._generation = (this._generation ?? 0) + 1;
+        const generation = this._generation;
+        this._load(generation).catch(error => log(`strokelet: enable failed: ${error}`));
+    }
+
+    async _load(generation) {
+        const stamp = Date.now();
+        const [{GestureOverlay}, {StrokeletIndicator}, {DemoTransport}] = await Promise.all([
+            import(`./overlay.js?stamp=${stamp}`),
+            import(`./indicator.js?stamp=${stamp}`),
+            import(`./transport.js?stamp=${stamp}`),
+        ]);
+        if (this._closed || this._generation !== generation)
+            return;
         this._overlay = new GestureOverlay();
         this._indicator = new StrokeletIndicator(this._overlay);
         Main.panel.addToStatusArea('strokelet', this._indicator);
@@ -24,6 +35,7 @@ export default class StrokeletExtension extends Extension {
     }
 
     disable() {
+        this._closed = true;
         if (this._stateSource) {
             GLib.source_remove(this._stateSource);
             this._stateSource = 0;

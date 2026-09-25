@@ -6,6 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -18,6 +19,23 @@ use strokelet::{
     grab_allowed, is_active_unlocked, key_event, peer_is_target, status_message, syn_report,
     validate_runtime_path, virtual_mouse_codes,
 };
+
+static STOP: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn request_stop(_signal: i32) {
+    STOP.store(true, Ordering::Relaxed);
+}
+
+fn arm_stop_signals() {
+    unsafe {
+        let mut action: nix::libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = request_stop as *const () as usize;
+        nix::libc::sigemptyset(&mut action.sa_mask);
+        action.sa_flags = 0;
+        nix::libc::sigaction(nix::libc::SIGINT, &action, std::ptr::null_mut());
+        nix::libc::sigaction(nix::libc::SIGTERM, &action, std::ptr::null_mut());
+    }
+}
 
 fn main() -> ExitCode {
     match dispatch(env::args().skip(1).collect()) {
@@ -153,6 +171,7 @@ fn run(args: &[String]) -> Result<(), String> {
     if !is_active_unlocked(facts) {
         return Err("target session is unknown, inactive, locked, or owned by another user".into());
     }
+    arm_stop_signals();
     let listener = bind_runtime_socket(opts.uid)?;
     let result = run_bound(&opts, listener);
     let _ = fs::remove_file(runtime_socket(opts.uid));
@@ -208,6 +227,10 @@ fn drive(
     let mut grabbed = false;
     let started = Instant::now();
     while started.elapsed() < opts.timeout {
+        if STOP.load(Ordering::Relaxed) {
+            eprintln!("strokelet: stopping");
+            break;
+        }
         let now_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         if client.is_none() {
             match listener.accept() {

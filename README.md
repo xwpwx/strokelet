@@ -38,6 +38,14 @@ scripts/run-demo.sh --device /dev/input/by-id/你的鼠标 --uid "$(id -u)" --se
 
 暂停：点面板上的「划」，打开「暂停」。停止：等超时，或在运行终端按 Ctrl+C。卸载：`scripts/remove-extension.sh`，它只删除带本项目标记的扩展目录。
 
+## 调试
+
+不用每次都注销。
+
+- 改 Rust 后重新 `cargo build`，再跑 `scripts/run-demo.sh`。Ctrl+C 会放开鼠标并删掉 socket。
+- 改 `overlay.js`、`indicator.js`、`transport.js` 后运行 `scripts/reload-extension.sh`。它会把扩展复制进用户目录，再让当前 Shell 关掉并重新打开。
+- 只有第一次安装，或者改了 `extension.js` 本身，才需要注销一次。GNOME 50 不能在 Wayland 上热重载扩展入口文件。
+
 默认阈值在识别规格里：起步 12 counts，上划至少 80 counts，最长 2500 ms。轨迹要移动约 12 个屏幕像素后才显示，线宽 3。
 
 生效文档见 [docs/index.md](docs/index.md)。当前任务见 [TASKS.md](TASKS.md)。

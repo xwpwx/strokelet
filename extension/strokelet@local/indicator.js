@@ -1,12 +1,15 @@
 import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
 import St from 'gi://St';
 
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-export class StrokeletIndicator extends PanelMenu.Button {
-    constructor(overlay) {
-        super(0.0, 'Strokelet');
+export const StrokeletIndicator = GObject.registerClass({
+    GTypeName: `StrokeletIndicator${Date.now()}`,
+}, class extends PanelMenu.Button {
+    _init(overlay) {
+        super._init(0.0, 'Strokelet');
         this._overlay = overlay;
         this.paused = false;
         this.add_child(new St.Label({text: '划'}));
@@ -37,9 +40,4 @@ export class StrokeletIndicator extends PanelMenu.Button {
         });
         this.menu.close();
     }
-
-    destroy() {
-        this._overlay = null;
-        super.destroy();
-    }
-}
+});
