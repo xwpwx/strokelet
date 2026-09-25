@@ -87,7 +87,12 @@
 | T01 | 建立 Rust crate 骨架、锁定依赖，并提供最小可运行测试 | 无 | passing | `make test` 或 `cargo test` | `rustc --version`；至少一个测试通过 | 独立评估：1 个测试通过；`Cargo.lock` 已跟踪；binary 启动通过 |
 | T02 | 将首版 Demo 设计从草稿提升为正式需求/设计文档 | T01 非硬依赖，可并行于文档会话 | passing | 检查 `docs/index.md` 生效列表与 frontmatter | `docs/CHANGELOG.md` 有对应新增记录 | 独立评估：3 份新增 active 文档，索引、台账、链接一致 |
 | T03 | 建立 Makefile 标准入口（setup/init/test/lint/check） | T01 | passing | `make init && make test && make check` | 新会话只读仓库能回答怎么跑、怎么测 | 独立评估：init/setup/test/check 通过；缺 Rust 提示明确 |
-| T04 | 相对位移手势产生一次 RightClick/Copy/Cancel 决策 | T02 | active | `make test && make check` | 边界、取消、重复释放测试通过 | 待验证 |
+| T04 | 相对位移手势产生一次 RightClick/Copy/Cancel 决策 | T02 | passing | `make test && make check` | 边界、取消、重复释放测试通过 | `make check`：30 个手势测试 + 1 个启动测试通过；无设备、socket 或剪贴板调用 |
+| T05 | Copy 决策只在桌面状态确认安全后允许注入一次 | T04 | passing | `make test && make check` | 未知、超时、暂停、断连、锁屏和 IPC 请求均不注入；成功仅一次 | `make check`：6 个门禁测试通过 |
+| T06 | 协议、会话状态和固定 Ctrl+C 输出拒绝不安全输入 | T05 | passing | `make check` | 13 个协议测试通过 | `make check`：握手、超长行、断连、健康超时、复制和弦、路径和 peer 测试通过 |
+| T07 | 输入帧透传右键以外的事件，并只在右击决策重放右键 | T06 | passing | `make check` | 8 个输入序列测试通过 | `make check`：透传、右击重放、上划、滚轮、SYN_DROPPED、合帧和设备过滤通过 |
+| T08 | 扩展安装脚本拒绝外来目录，GJS 能收发一行 JSON | T07 | passing | `scripts/check-extension-install.sh`；`gjs -m scripts/check-gjs-socket.js` | 两条命令都打印成功 | 2026-09-25 两条命令成功；Shell 内轨迹未实机验证 |
+| T09 | 在真实桌面完成上划复制、负例、热插拔和锁屏验收 | T08 | blocked | 按 `docs/acceptance/demo-checklist.md` 操作真实鼠标 | 编辑器与 Firefox 粘贴结果、轨迹和普通右击 | 等待用户实机验证；模拟测试不能代替 |
 
 ## T01: 建立 Rust crate 骨架与最小测试
 
@@ -143,10 +148,10 @@
 
 - 行为：右键按下后按 SYN_REPORT 帧累计相对位移，根据正式手势规格在释放时返回一次 RightClick、Copy 或 Cancel；重复释放返回 None。
 - 依赖：T02 的 `docs/official/specs/gesture-recognition.md`。
-- 状态：active
+- 状态：passing
 - 范围：`src/gesture.rs` 与 `tests/gesture_cases.rs`，覆盖阈值、折返、直线度、超时及取消。不连接 evdev/uinput，不绘制轨迹，不注入 Ctrl+C。
 - 验证命令：`make test && make check`。
-- 完成证据：具名行为测试通过，重复释放无第二次决策；纯状态机没有设备、socket 或剪贴板副作用。
+- 完成证据：`make check` 通过。30 个具名手势测试覆盖阈值、折返、直线度、超时和取消；重复释放返回 None。`src/gesture.rs` 不访问设备、socket 或剪贴板。
 
 ### 冲刺合同
 
@@ -154,3 +159,55 @@
 - 验证标准：79/80 counts、2500/2501 ms、横向偏移和直线度边界；普通右击、下上往返、横/下划、取消均有可回放测试。
 - 排除项：真实设备接管、GNOME 扩展、协议和复制注入。
 - 运行时信号：测试进程退出码与各具名测试结果；无外部资源或设备 FD。
+
+## T05: 复制注入门禁
+
+- 行为：识别结果为 Copy 时，仅当目标会话归属正确、活动且未锁定，扩展已连接，未暂停，修饰键状态与通信结果已知且未超时，权限检查通过，才允许注入一次 Ctrl+C。同一决策的再次检查、非 Copy 决策，以及 IPC 直接请求，都不注入。
+- 依赖：T04 的 `Decision`；依据为 `docs/official/design/strokelet-demo.md` 的会话、连接、暂停、修饰键和权限边界。
+- 状态：passing
+- 范围：`src/copy_gate.rs` 与 `tests/copy_gate_cases.rs`。不打开 socket，不读 logind，不写 uinput。
+- 验证命令：`make test && make check`。
+- 完成证据：`make check` 中 6 个门禁测试通过。不安全或不完整的桌面状态不能注入，成功路径只有一次。
+
+## T06: 协议、会话与固定复制
+
+- 行为：JSON 行协议拒绝未知版本、超长行、截断 JSON 和重复 Ready；断连后旧手势 id 失效；复制输出固定为 Ctrl、C 的按下与抬起；运行时路径拒绝符号链接和错误属主。
+- 依赖：T05。
+- 状态：passing
+- 范围：`src/protocol.rs`、`src/copy.rs`、`src/session.rs`、`src/server.rs` 与 `tests/protocol_cases.rs`。
+- 验证命令：`make check`。
+- 完成证据：13 个具名协议测试通过。
+
+## T07: 输入帧与右键控制
+
+- 行为：同一 SYN_REPORT 内的相对位移合并成一次 motion；右键被暂存，只在右击决策重放；滚轮、侧键和 SYN_DROPPED 取消手势并转发原事件。
+- 依赖：T06。
+- 状态：passing
+- 范围：`src/input.rs` 与 `tests/input_sequences.rs`。fake sink，不抓真实设备。
+- 验证命令：`make check`。
+- 完成证据：8 个具名输入测试通过。
+
+## T08: 扩展安装与 GJS socket
+
+- 行为：安装脚本只覆盖带 `STROKELET_OWNED` 标记的本项目扩展；卸载脚本拒绝删除外来目录；GJS 能通过 Unix socket 收发一行 JSON。
+- 依赖：T07。
+- 状态：passing
+- 范围：`extension/strokelet@local/`、`scripts/install-extension.sh`、`scripts/remove-extension.sh`、`scripts/check-gjs-socket.js`。
+- 验证命令：`scripts/check-extension-install.sh` 与 `gjs -m scripts/check-gjs-socket.js`。
+- 完成证据：两条命令成功。GNOME Shell 内的轨迹、暂停菜单和焦点行为仍属于 T09。
+
+## T09: 实机验收
+
+- 行为：在 Wayland 桌面上，右键直线上划显示轨迹并复制一次；普通右击、负例、停止、热插拔和锁屏按验收清单确认。
+- 依赖：T08，以及用户能操作真实鼠标。
+- 状态：blocked
+- 范围：`src/main.rs` 前台循环、`scripts/run-demo.sh`、`docs/acceptance/demo-checklist.md`。
+- 验证命令：按验收清单操作真实鼠标。
+- 完成证据：尚无。当前会话不能操作真实鼠标，不能把 `make check` 记成实机通过。
+
+### 冲刺合同
+
+- 范围：把一次手势决策和一份桌面观察结果变成 `None` 或 `CopyOnce`。
+- 验证标准：新鲜安全状态注入一次；二次检查、失败后重试、右击、取消、IPC 请求均不注入。会话、扩展、暂停、修饰键、通信、权限的未知和超时都拒绝。
+- 排除项：真实 logind、Unix socket、虚拟键盘和轨迹层。
+- 运行时信号：测试进程退出码与各具名测试结果；无外部进程或设备 FD。

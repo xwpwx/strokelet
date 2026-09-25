@@ -5,16 +5,16 @@
 
 ## 当前状态
 
-- 最新 commit: 运行 `git rev-parse HEAD` 查询
-- 测试状态: `make test` 已有具名测试通过
+- 最新 commit: 运行 `git rev-parse HEAD` 查询；本次实现尚未提交
+- 测试状态: `make check` 通过，58 个测试
 - Lint: `make lint` 通过
 - 类型检查: `make check` 包含 `cargo check --locked --offline`
-- 完整验证: `make check` 通过
+- 完整验证: `make check` 通过；GJS socket 与扩展安装脚本通过
 - Graphify 图谱: 未建立
 
 ## 当前目标
 
-- T01、T02、T03 已经独立验收；当前执行 `TASKS.md` T04，纯手势识别状态机。
+- T01–T08 已有可执行证据。T09 实机验收为 `blocked`，等待用户操作真实鼠标。
 
 ## 相关文档
 
@@ -32,29 +32,32 @@
 - [x] T01：Rust crate 骨架与最小测试，独立评估通过
 - [x] T03：标准 Makefile 入口，独立评估通过
 - [x] T02：首版正式需求、架构和识别规格，独立评估通过
+- [x] T04：纯手势识别状态机，`make check` 通过后记为 passing
+- [x] T05–T08：门禁、协议、输入序列、扩展安装与 GJS socket
 
 ## 进行中
 
-- [ ] T04：纯手势识别状态机
+- [ ] T09：实机验收（blocked，等待用户）
 
 ## 已知问题
 
 - `make setup` 只在当前机器验证；全新机器预装 Rust 的步骤尚未验证。
-- 首版需求、设计和识别规格已生效；T04 纯识别状态机尚未实现。
-- 草稿实施计划提到默认前台运行 120 秒，但正式文档尚未设为硬约束；设备接管前需确认。
+- grab 前没有读取物理按键状态；`grab_allowed` 的按键参数目前固定为未按下。
+- 复制门禁里的权限观察在前台循环中固定为已知且通过，没有单独的权限探测。
+- GNOME Shell 内的轨迹、焦点和菜单尚未实机运行。St 不能在 Shell 外实例化。
 
 ## 阻塞项
 
 | 阻塞项 | 原因 | 需要谁处理 | 下一步 |
 |---|---|---|---|
 | 全新机器初始化未验证 | 尚无干净机器验证 Rust 安装前提 | 后续维护者 | 具备全新环境时运行 `make init`、`make setup`、`make check` |
-| 实机设备与覆盖层尚未验证 | T04 只做纯识别，不访问设备或 Shell | 后续任务 | 先完成可回放逻辑，再安排目标桌面验证 |
+| 实机设备与覆盖层尚未验证 | 当前会话不能操作真实鼠标，也不能在 Shell 外创建 St | 用户 | 按 `docs/acceptance/demo-checklist.md` 做一次上划和粘贴 |
 
 ## 下一步
 
 1. 新会话先读 AGENTS.md、docs/index.md、INIT_CONTRACT.md、TASKS.md、本文件与 DECISIONS.md。
-2. 按手势识别规格先写可回放测试，观察失败后实现 T04。
-3. T04 独立验收后再启动下一业务任务；未拿到完成证据前不要并行开工。
+2. 不要把 T09 标成 passing。请用户按 `docs/acceptance/demo-checklist.md` 在 Wayland 桌面做一次上划和粘贴。
+3. 若要补代码，优先补 grab 前的按键状态，以及复制前的真实权限观察。
 
 ## 最近验证结果
 
@@ -70,13 +73,21 @@
 | 2026-09-25 | `gnome-shell --version`、`lsb_release -ds`、`echo "$XDG_SESSION_TYPE"` | 通过 | GNOME Shell 50.1、Ubuntu 26.04.1 LTS、Wayland；仅环境事实，不代表功能验收 |
 | 2026-09-25 | `python3` + PyYAML 校验 official Frontmatter/topic/index/CHANGELOG/链接；`make check` | 通过 | 4 份 active 文档元数据和链接一致；1 个 Rust 测试通过 |
 | 2026-09-25 | 独立评估：official Frontmatter/topic/index/CHANGELOG/链接与 `make check` | 通过 | T02：3 份新增 active 文档，无重大遗漏 |
+| 2026-09-25 | `make test`（实现前） | 按预期失败 | `tests/gesture_cases.rs` 找不到 `Decision` / `Gesture` / `Limits` |
+| 2026-09-25 | `cargo fmt --all` 后 `make check` | 通过 | 25 个手势测试 + 1 个启动测试；fmt / clippy / typecheck 成功 |
+| 2026-09-25 | `make check` | 通过 | 补上绘制超时提前进入取消；30 个手势测试 + 1 个启动测试 |
+| 2026-09-25 | `make test`（门禁实现前） | 按预期失败 | `tests/copy_gate_cases.rs` 找不到 `CopyGate` 等类型 |
+| 2026-09-25 | `make check` | 通过 | T05：6 个门禁测试 + 既有 31 个测试；fmt / clippy / typecheck 成功 |
+| 2026-09-25 | `make check` | 通过 | 58 个测试：手势 30、门禁 6、输入 8、协议 13、启动 1 |
+| 2026-09-25 | `gjs -m scripts/check-gjs-socket.js` | 通过 | 打印 `strokelet: gjs unix socket round-trip ok` |
+| 2026-09-25 | `scripts/check-extension-install.sh` | 通过 | 外来目录拒绝安装和删除；非 Wayland 拒绝 `run-demo.sh` |
 
 ## Graphify 图谱状态
 
 - graphify-out 是否存在：否
 - 最近更新命令：未运行
 - 最近图谱健康：未检查
-- 需要重建或更新的原因：项目尚未出现稳定代码结构或 3 个以上核心模块
+- 需要重建或更新的原因：代码已超过 3 个模块，但本会话未运行 graphify；若本机没有该命令，保持未建立
 
 ## 决策摘要
 
@@ -118,3 +129,27 @@
 - 验证信号：目标环境版本已核实；正式文档的 Frontmatter、索引、台账和交叉链接已本地检查通过，待独立复核。
 - 未完成事项：T02 已独立验收；T04 纯识别状态机已启动，设备与轨迹仍未实现。
 - 图谱：仅文档内容新增，当前仍无稳定多模块代码结构，图谱未受影响。
+
+### 2026-09-25：T04 纯识别状态机
+
+- 本次做了什么：补全可回放手势测试，并实现 `src/gesture.rs`。释放时返回一次 RightClick、Copy 或 Cancel；重复释放返回 None。
+- 验证信号：实现前测试因类型缺失失败；实现后 `make check` 通过。复查时补上绘制超时：超过 2500 ms 立即离开 Drawing，倒退时间戳不能恢复，未进入绘制的长按仍是普通右击。当前 30 个具名手势测试通过。
+- 未完成事项：T04 仍待独立验收，不能由本次实现会话改为 `passing`。设备、轨迹和复制注入尚未开始。本次改动未提交。
+- 下次开工建议：先独立验收 T04，确认完成后再选下一任务。
+- 图谱：仍只有一个识别模块，未形成 3 个以上核心模块，图谱未受影响。
+
+### 2026-09-25：T04 收口并开始 T05
+
+- 本次做了什么：按已通过的 `make check` 将 T04 记为 `passing`，并实现复制注入门禁。Copy 只有在会话、扩展、暂停、修饰键、通信和权限都确认安全时才返回一次 `CopyOnce`。
+- 验证信号：门禁测试先因类型缺失失败；实现后 `make check` 通过，6 个具名测试覆盖重复注入、失败后重试、非 Copy 决策、IPC 请求，以及未知、超时和不安全桌面状态。
+- 未完成事项：T05 仍待复核后才能改为 `passing`。协议、设备和轨迹尚未开始。本次改动未提交。
+- 下次开工建议：先复核 T05，再选下一任务。
+- 图谱：识别与门禁仍不足 3 个核心模块，图谱未受影响。
+
+### 2026-09-25：实施计划中的可自动部分
+
+- 本次做了什么：补完协议、输入帧、前台 `run` 循环、GNOME 50 扩展和安装/卸载/演示脚本。Begin/End/Cancel 写入客户端 socket。暂停时解除 grab。进程退出删除自己的 socket。正式架构把运行时目录改为 0770。
+- 验证信号：`make check` 58 个测试通过。GJS socket 往返和扩展安装脚本通过。
+- 未完成事项：T09 等待用户实机验证。grab 前未读物理按键；权限观察在循环里固定为通过。本次改动未提交。
+- 下次开工建议：用户按验收清单操作真实鼠标。不要把模拟测试写成实机通过。
+- 图谱：模块已超过 3 个，本会话未建立图谱。

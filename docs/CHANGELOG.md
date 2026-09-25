@@ -11,3 +11,4 @@
 | 2026-09-25 | docs/official/requirements/strokelet-demo.md | 1.0.0 | 新增 | 确定首版 Demo 用户行为、范围与验收要求 |
 | 2026-09-25 | docs/official/design/strokelet-demo.md | 1.0.0 | 新增 | 确定首版组件边界、运行流程与安全约束 |
 | 2026-09-25 | docs/official/specs/gesture-recognition.md | 1.0.0 | 新增 | 确定上划识别状态、阈值与判据 |
+| 2026-09-25 | docs/official/design/strokelet-demo.md | 1.1.0 | 修改 | 运行时目录权限由 0750 改为 0770，使目标用户能绑定 socket |

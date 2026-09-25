@@ -1,7 +1,7 @@
 ---
 title: Strokelet 首版 Demo 架构
 status: active
-version: 1.0.0
+version: 1.1.0
 updated: 2026-09-25
 owner: 待确认
 topic: strokelet-demo-architecture
@@ -27,7 +27,7 @@ topic: strokelet-demo-architecture
 ## 权限与故障边界
 
 - 仅输入进程获得所选设备和 uinput 所需权限；不以 root 运行 GUI 或任意用户命令，不把日常用户加入可读取所有输入的 input 组。
-- socket 位于受限的 `/run/strokelet/<uid>/`，拒绝已有不明路径和符号链接；目录由 root 持有、组为目标用户主组、权限 0750，socket 由目标 UID 持有、权限 0600。使用 SO_PEERCRED 限制目标 UID；路径、所有者和权限均须在实现及测试中验证。
+- socket 位于受限的 `/run/strokelet/<uid>/`，拒绝已有不明路径和符号链接；目录由 root 持有、组为目标用户主组、权限 0770，socket 由目标 UID 持有、权限 0600。目录不用 0750，因为目标用户需要在其中绑定 socket。使用 SO_PEERCRED 限制目标 UID；路径、所有者和权限均须在实现及测试中验证。
 - 暂停时停止手势接管并隐藏轨迹，使普通右击仍由桌面处理；恢复前重新检查扩展和会话状态。
 - 会话状态、修饰键状态或通信结果未知/超时时不注入 Ctrl+C；注入前再次检查。IPC 客户端不能直接请求 Copy。
 - 启动先做短时限透传验证，退出时释放本进程持有的虚拟按键、关闭设备 FD 并清理自己的 socket；不得擅自释放物理键盘上的按键。

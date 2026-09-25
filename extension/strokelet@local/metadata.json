@@ -1,0 +1,7 @@
+{
+  "uuid": "strokelet@local",
+  "name": "Strokelet Demo",
+  "description": "Right-button stroke demo",
+  "shell-version": ["50"],
+  "url": "https://example.invalid/strokelet"
+}
