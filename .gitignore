@@ -1,0 +1,10 @@
+# Graphify 可再生导航缓存，不作为正式文档依据
+graphify-out/
+
+# Rust
+/target/
+
+# OS / editor
+.DS_Store
+*.swp
+*~
