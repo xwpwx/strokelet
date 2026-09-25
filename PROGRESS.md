@@ -6,15 +6,15 @@
 ## 当前状态
 
 - 最新 commit: 运行 `git rev-parse HEAD` 查询
-- 测试状态: `cargo test --offline` 已有具名测试通过
-- Lint: `cargo fmt` / `cargo clippy` 已可用，标准入口待 T03
-- 类型检查: `cargo check --offline` 已可用
-- 完整验证: Makefile 入口待 T03
+- 测试状态: `make test` 已有具名测试通过
+- Lint: `make lint` 通过
+- 类型检查: `make check` 包含 `cargo check --locked --offline`
+- 完整验证: `make check` 通过
 - Graphify 图谱: 未建立
 
 ## 当前目标
 
-- T01 已经独立验收；当前执行 `TASKS.md` T03，建立标准 Makefile 入口。
+- T01 已经独立验收；当前执行 `TASKS.md` T03，Makefile 已实现，待独立验收。
 
 ## 相关文档
 
@@ -37,22 +37,21 @@
 
 ## 已知问题
 
-- 仓库尚无 Makefile 标准验证入口。
-- Rust 工具链位于 `~/.cargo/bin`，当前 shell 的 PATH 未包含该目录。
+- `make setup` 只在当前机器验证；全新机器预装 Rust 的步骤尚未验证。
 - 首版产品设计仍在草稿区，还不是开发依据。
 
 ## 阻塞项
 
 | 阻塞项 | 原因 | 需要谁处理 | 下一步 |
 |---|---|---|---|
-| 标准验证入口缺失 | 尚无 Makefile | 后续 agent 或维护者 | T01 独立验收后启动 T03 |
+| 全新机器初始化未验证 | 尚无干净机器验证 Rust 安装前提 | 后续维护者 | 具备全新环境时运行 `make init`、`make setup`、`make check` |
 | 无生效需求/设计文档 | 仅有 drafts | 后续文档会话 | 启动 T02，提升正式文档 |
 
 ## 下一步
 
 1. 新会话先读 AGENTS.md、docs/index.md、INIT_CONTRACT.md、TASKS.md、本文件与 DECISIONS.md。
-2. 完成 T03 的 Makefile 并验证 `make init && make test && make check`。
-3. T03 独立验收后再启动 T02；未拿到完成证据前不要并行开工。
+2. 独立验收 T03 的 `make init && make test && make check`，并检查缺失 Rust 时的错误提示。
+3. T03 验收后再启动 T02；未拿到完成证据前不要并行开工。
 
 ## 最近验证结果
 
@@ -62,6 +61,8 @@
 | 2026-09-25 | graphify | 不适用 | 空仓库初始化，图谱未建立 |
 | 2026-09-25 | `PATH="$HOME/.cargo/bin:$PATH" cargo test --offline` | 通过 | 1 个具名启动测试；先观察到失败，再通过 |
 | 2026-09-25 | 独立评估：`cargo fmt`、`cargo clippy`、`cargo check`、`cargo test`、`cargo run`（锁定/离线） | 通过 | T01：1 个具名测试，binary 输出 `strokelet: scaffold only`，锁文件已跟踪 |
+| 2026-09-25 | `make setup`；`make init && make test && make check` | 通过 | 当前机器；1 个具名测试，fmt / clippy / typecheck 成功 |
+| 2026-09-25 | `HOME=/tmp/strokelet-missing-rust PATH=/usr/bin:/bin make init` | 按预期失败 | 明确提示缺少 rustc 和安装入口 |
 
 ## Graphify 图谱状态
 
@@ -96,3 +97,10 @@
 - 未完成事项：T01 仍待独立验收并由 supervisor/harness/人工 reviewer 更新状态；T03 标准 Makefile 入口尚未建立。
 - 下次开工建议：先独立验收 T01 的测试与锁文件；确认完成后再选下一任务。
 - 图谱：目前仅有最小 crate，未形成稳定多模块结构，不需要建立图谱。
+
+### 2026-09-25：T03 标准入口
+
+- 本次做了什么：加入 Makefile 的 setup/init/test/lint/check，并更新启动契约和 README。
+- 验证信号：当前机器全部标准入口通过；模拟缺少 Rust 时 `make init` 给出明确提示。
+- 未完成事项：T03 待独立验收；全新机器的 Rust 安装前提尚未实测；T02 正式需求/设计文档尚未开始。
+- 图谱：未改变代码模块或依赖关系，图谱未受影响。
