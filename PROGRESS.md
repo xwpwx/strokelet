@@ -5,17 +5,17 @@
 
 ## 当前状态
 
-- 最新 commit: fd2144988a0e7815f9e0eb669101b5928be3a3ef
-- 测试状态: 未建立
-- Lint: 未建立
-- 类型检查: 未建立
-- 完整验证: 未建立
+- 最新 commit: 运行 `git rev-parse HEAD` 查询
+- 测试状态: `cargo test --offline` 已有具名测试通过
+- Lint: `cargo fmt` / `cargo clippy` 已可用，标准入口待 T03
+- 类型检查: `cargo check --offline` 已可用
+- 完整验证: Makefile 入口待 T03
 - Graphify 图谱: 未建立
 
 ## 当前目标
 
-- 完成文档治理 harness 初始化，使后续会话能从仓库地图接手工作。
-- 下一步进入 `TASKS.md` 的 T01（工程骨架）或 T02（正式文档提升），任意时刻只激活一个。
+- 完成 `TASKS.md` T01 的 Rust 工程骨架与可运行测试。
+- T01 保持 `active`，待独立验收后更新状态。
 
 ## 相关文档
 
@@ -33,26 +33,26 @@
 
 ## 进行中
 
-- [ ] 无业务任务处于 active
+- [ ] T01：Rust crate 骨架与最小测试（已实现，待独立验收）
 
 ## 已知问题
 
-- 仓库尚无源代码、测试、Makefile 或锁定依赖。
-- 本机可能未安装 Rust 工具链；T01 开始前需先确认 `cargo` / `rustc`。
+- 仓库尚无 Makefile 标准验证入口。
+- Rust 工具链位于 `~/.cargo/bin`，当前 shell 的 PATH 未包含该目录。
 - 首版产品设计仍在草稿区，还不是开发依据。
 
 ## 阻塞项
 
 | 阻塞项 | 原因 | 需要谁处理 | 下一步 |
 |---|---|---|---|
-| 可执行验证入口缺失 | 尚无 crate / Makefile / 测试 | 后续 agent 或维护者 | 启动 T01，建立最小 `cargo test` |
+| 标准验证入口缺失 | 尚无 Makefile | 后续 agent 或维护者 | T01 独立验收后启动 T03 |
 | 无生效需求/设计文档 | 仅有 drafts | 后续文档会话 | 启动 T02，提升正式文档 |
 
 ## 下一步
 
 1. 新会话先读 AGENTS.md、docs/index.md、INIT_CONTRACT.md、TASKS.md、本文件与 DECISIONS.md。
-2. 在 T01 与 T02 中选择一个设为 `active`；未拿到完成证据前不要并行开工。
-3. T01 开始前先确认 `cargo` / `rustc` 是否可用；缺失则先补工具链，不要开始业务功能。
+2. 用 `PATH="$HOME/.cargo/bin:$PATH" cargo test --offline` 独立验收 T01；由 supervisor/harness/人工 reviewer 根据结果更新 `TASKS.md` 状态。
+3. T01 验收后再启动 T02 或 T03；未拿到完成证据前不要并行开工。
 
 ## 最近验证结果
 
@@ -60,6 +60,7 @@
 |---|---|---|---|
 | 2026-09-25 | 文档结构与 Frontmatter 人工检查 | 通过 | 仅 harness 文件；无 make/cargo 可跑 |
 | 2026-09-25 | graphify | 不适用 | 空仓库初始化，图谱未建立 |
+| 2026-09-25 | `PATH="$HOME/.cargo/bin:$PATH" cargo test --offline` | 通过 | 1 个具名启动测试；先观察到失败，再通过 |
 
 ## Graphify 图谱状态
 
@@ -86,3 +87,11 @@
 - 重要发现：仓库原先不是 git 仓库；除两份过程文档外无代码。
 - 未完成事项：Rust 工程骨架、正式需求/设计文档、Makefile 验证入口、首次之外的业务实现。
 - 下次开工建议：按 TASKS.md 只激活 T01 或 T02。
+
+### 2026-09-25：T01 工程骨架
+
+- 本次做了什么：建立最小 Rust library + binary、工具链选择器、Cargo lockfile 和具名启动测试。
+- 验证信号：先观察到启动测试失败（stdout 为空），实现后测试通过；`cargo check --offline` 与 Clippy 通过。
+- 未完成事项：T01 仍待独立验收并由 supervisor/harness/人工 reviewer 更新状态；T03 标准 Makefile 入口尚未建立。
+- 下次开工建议：先独立验收 T01 的测试与锁文件；确认完成后再选下一任务。
+- 图谱：目前仅有最小 crate，未形成稳定多模块结构，不需要建立图谱。

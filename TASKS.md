@@ -84,7 +84,7 @@
 
 | ID | 行为描述 | 依赖 | 状态 | 验证命令 | 确认命令/信号 | 完成证据 |
 |---|---|---|---|---|---|---|
-| T01 | 建立 Rust crate 骨架、锁定依赖，并提供最小可运行测试 | 无 | not_started | `make test` 或 `cargo test` | `rustc --version`；至少一个测试通过 | 测试命令输出与 lockfile |
+| T01 | 建立 Rust crate 骨架、锁定依赖，并提供最小可运行测试 | 无 | active | `make test` 或 `cargo test` | `rustc --version`；至少一个测试通过 | 测试命令输出与 lockfile |
 | T02 | 将首版 Demo 设计从草稿提升为正式需求/设计文档 | T01 非硬依赖，可并行于文档会话 | not_started | 检查 `docs/index.md` 生效列表与 frontmatter | `docs/CHANGELOG.md` 有对应新增记录 | 生效文档路径 + CHANGELOG 行 |
 | T03 | 建立 Makefile 标准入口（setup/init/test/lint/check） | T01 | not_started | `make init && make test && make check` | 新会话只读仓库能回答怎么跑、怎么测 | 命令输出与 `INIT_CONTRACT.md` 清单勾选 |
 
@@ -93,7 +93,7 @@
 - 目标：让后续会话能在本仓库安装工具链、锁定依赖，并跑通至少一个示例测试。
 - 范围：创建最小 library+binary crate、提交 `Cargo.lock`、提供 `cargo test` 可观察通过信号。不实现手势识别或设备接管。
 - 依赖：无
-- 状态：not_started
+- 状态：active
 - 验证命令：
   - `cargo test`
   - 若已建立 Makefile：`make test`
