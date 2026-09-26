@@ -51,6 +51,7 @@ mkdir -p \
 install -m 0755 "$bin" "$stage/usr/bin/strokelet"
 install -m 0755 packaging/strokelet-mkruntime "$stage/usr/lib/strokelet/strokelet-mkruntime"
 install -m 0755 packaging/enable-extension.sh "$stage/usr/lib/strokelet/enable-extension.sh"
+install -m 0755 packaging/strokelet-open.sh "$stage/usr/lib/strokelet/strokelet-open.sh"
 install -m 0644 packaging/strokelet.service "$stage/usr/lib/systemd/user/strokelet.service"
 install -m 0644 packaging/strokelet-runtime.conf "$stage/usr/lib/systemd/system/user-runtime-dir@.service.d/strokelet.conf"
 install -m 0644 packaging/strokelet.tmpfiles "$stage/usr/lib/tmpfiles.d/strokelet.conf"
@@ -62,6 +63,8 @@ install -m 0644 settings/app.js "$stage/usr/share/strokelet/settings/app.js"
 cp -a extension/strokelet@local/. "$stage/usr/share/gnome-shell/extensions/strokelet@local/"
 rm -f "$stage/usr/share/gnome-shell/extensions/strokelet@local/STROKELET_OWNED"
 chmod 0644 "$stage/usr/share/gnome-shell/extensions/strokelet@local/"*
+mkdir -p "$stage/usr/share/gnome-shell/extensions/strokelet@local/settings"
+install -m 0644 settings/app.js "$stage/usr/share/gnome-shell/extensions/strokelet@local/settings/app.js"
 find "$stage" -type d -exec chmod 0755 {} +
 
 install -m 0755 packaging/postinst "$stage/DEBIAN/postinst"

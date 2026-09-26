@@ -5,6 +5,7 @@ import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
 
+import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
@@ -27,20 +28,31 @@ export const StrokeletIndicator = GObject.registerClass({
         this._status = new PopupMenu.PopupMenuItem('未连接', {reactive: false});
         this.menu.addMenuItem(this._status);
         this.menu.addAction('设置', () => this._openSettings());
-        this._pauseItem = new PopupMenu.PopupSwitchMenuItem('暂停', false);
-        this._pauseItem.connect('toggled', item => {
-            this.paused = item.state;
-            this._mark.queue_repaint();
-            this._overlay.endActive();
-        });
-        this.menu.addMenuItem(this._pauseItem);
-        this.menu.addAction('轨迹自检（5 秒）', () => this._selfTestAfterClose());
+        this._pauseItem = this.menu.addAction('暂停', () => this._togglePause());
+        this.menu.addAction('退出', () => this._quit());
+    }
+
+    _togglePause() {
+        this.paused = !this.paused;
+        this._pauseItem.label.text = this.paused ? '启动' : '暂停';
+        this._mark.queue_repaint();
+        this._overlay.endActive();
     }
 
     setConnected(connected) {
         this._connected = connected;
         this._status.label.text = connected ? '已连接' : '未连接';
         this._mark.queue_repaint();
+    }
+
+    _quit() {
+        this.menu.close();
+        spawn(['systemctl', '--user', 'stop', 'strokelet.service']);
+        spawn(['pkill', '-f', 'settings/app.js']);
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 150, () => {
+            spawn(['gnome-extensions', 'disable', 'strokelet@local']);
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     _paintMark(area) {
@@ -64,25 +76,35 @@ export const StrokeletIndicator = GObject.registerClass({
             const command = Gio.File.new_for_path('/usr/bin/strokelet').query_exists(null)
                 ? '/usr/bin/strokelet'
                 : 'strokelet';
+            const bundled = bundledSettings();
+            if (bundled) {
+                const launcher = Gio.SubprocessLauncher.new(Gio.SubprocessFlags.NONE);
+                launcher.setenv('STROKELET_BIN', command, true);
+                launcher.spawnv(['gjs', '-m', bundled]);
+                return;
+            }
             Gio.Subprocess.new([command, 'settings'], Gio.SubprocessFlags.NONE);
         } catch (error) {
             log(`strokelet: cannot open settings: ${error}`);
         }
     }
-
-    _selfTestAfterClose() {
-        const id = this.menu.connect('open-state-changed', (_menu, open) => {
-            if (open)
-                return;
-            this.menu.disconnect(id);
-            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-                this._overlay.selfTest();
-                return GLib.SOURCE_REMOVE;
-            });
-        });
-        this.menu.close();
-    }
 });
+
+function spawn(argv) {
+    try {
+        Gio.Subprocess.new(argv, Gio.SubprocessFlags.NONE);
+    } catch (error) {
+        log(`strokelet: ${argv.join(' ')} failed: ${error}`);
+    }
+}
+
+function bundledSettings() {
+    const extension = Extension.lookupByUUID('strokelet@local');
+    if (!extension?.path)
+        return null;
+    const path = GLib.build_filenamev([extension.path, 'settings', 'app.js']);
+    return Gio.File.new_for_path(path).query_exists(null) ? path : null;
+}
 
 function foreground(widget) {
     const color = widget.get_theme_node().get_foreground_color();

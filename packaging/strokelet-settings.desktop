@@ -2,7 +2,7 @@
 Type=Application
 Name=Strokelet
 Comment=给鼠标动作配快捷键
-Exec=strokelet settings
+Exec=/usr/lib/strokelet/strokelet-open.sh
 Icon=input-mouse
 Terminal=false
 Categories=Settings;DesktopSettings;

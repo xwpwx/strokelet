@@ -6,6 +6,8 @@ import Gtk from 'gi://Gtk?version=4.0';
 
 const TRIGGERS = ['left', 'right', 'middle', 'forward', 'back'];
 const TRIGGER_LABELS = ['左键', '右键', '中键', '侧键前进', '侧键后退'];
+const NAME_PLACES = ['bottom', 'pointer'];
+const NAME_PLACE_LABELS = ['屏幕下方居中', '松手的地方'];
 const MAX_RULES = 16;
 const STYLE = `
   .stroke-preview {
@@ -77,6 +79,34 @@ app.connect('activate', () => {
     triggerGroup.add(trigger);
     page.add(triggerGroup);
 
+    const appearance = readAppearance();
+    const displayGroup = new Adw.PreferencesGroup({
+        title: '显示',
+        description: '屏幕上的轨迹和成功后的名字。保存后，下一笔就会换上。',
+    });
+    const namePlaceRow = new Adw.ComboRow({
+        title: '名字位置',
+        model: modelOf(NAME_PLACE_LABELS),
+    });
+    namePlaceRow.selected = Math.max(0, NAME_PLACES.indexOf(appearance.namePlace));
+    const widthRow = new Adw.SpinRow({
+        title: '线条粗细',
+        subtitle: '像素',
+        adjustment: new Gtk.Adjustment({
+            lower: 2,
+            upper: 20,
+            step_increment: 1,
+            page_increment: 2,
+            value: appearance.lineWidth,
+        }),
+        digits: 0,
+    });
+    displayGroup.add(namePlaceRow);
+    displayGroup.add(widthRow);
+    page.add(displayGroup);
+    const selectedNamePlace = () => NAME_PLACES[namePlaceRow.selected] || 'bottom';
+    const selectedLineWidth = () => Math.round(widthRow.get_value());
+
     const rules = config.rules.map(rule => cloneRule(rule));
     const rulesGroup = new Adw.PreferencesGroup({title: '规则'});
     const add = new Gtk.Button({label: '添加', css_classes: ['flat'], tooltip_text: '添加一条规则'});
@@ -88,6 +118,8 @@ app.connect('activate', () => {
         trigger: triggerName(),
         rules,
         mouse: selectedMouse(),
+        namePlace: selectedNamePlace(),
+        lineWidth: selectedLineWidth(),
     });
     let baseline = '';
     const updateDirty = () => {
@@ -160,6 +192,8 @@ app.connect('activate', () => {
         }, true);
     });
     mouseRow.connect('notify::selected', () => updateDirty());
+    namePlaceRow.connect('notify::selected', () => updateDirty());
+    widthRow.connect('notify::value', () => updateDirty());
     trigger.connect('notify::selected', () => {
         if (triggerName() === shownTrigger)
             return;
@@ -183,6 +217,7 @@ app.connect('activate', () => {
         const mouse = selectedMouse();
         if (mouse)
             writeDevice(mouse);
+        writeAppearance(selectedNamePlace(), selectedLineWidth());
         baseline = snapshot();
         updateDirty();
         const restarted = mouse ? restartService() : false;
@@ -284,6 +319,33 @@ function readDevice() {
     } catch {
         return '';
     }
+}
+
+function appearanceFile() {
+    return GLib.build_filenamev([GLib.get_user_config_dir(), 'strokelet', 'appearance.json']);
+}
+
+function readAppearance() {
+    try {
+        const [ok, bytes] = GLib.file_get_contents(appearanceFile());
+        if (!ok)
+            return {namePlace: 'bottom', lineWidth: 6};
+        const data = JSON.parse(new TextDecoder().decode(bytes));
+        const width = Number(data.lineWidth);
+        return {
+            namePlace: data.namePlace === 'pointer' ? 'pointer' : 'bottom',
+            lineWidth: Number.isFinite(width) ? Math.min(20, Math.max(2, Math.round(width))) : 6,
+        };
+    } catch {
+        return {namePlace: 'bottom', lineWidth: 6};
+    }
+}
+
+function writeAppearance(namePlace, lineWidth) {
+    const dir = GLib.build_filenamev([GLib.get_user_config_dir(), 'strokelet']);
+    GLib.mkdir_with_parents(dir, 0o755);
+    const text = `${JSON.stringify({namePlace, lineWidth}, null, 2)}\n`;
+    GLib.file_set_contents(appearanceFile(), text);
 }
 
 function writeDevice(path) {
@@ -646,7 +708,7 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
     page.add(resultGroup);
     const nameGroup = new Adw.PreferencesGroup({
         title: '屏幕提示',
-        description: '留空则不显示。识别成功后，这个名字出现在指针旁边大约一秒。',
+        description: '留空则不显示。识别成功后出现大约一秒。位置在「显示」里选。',
     });
     nameGroup.add(nameRow);
     page.add(nameGroup);

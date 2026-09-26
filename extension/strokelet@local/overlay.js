@@ -1,3 +1,4 @@
+import Cairo from 'gi://cairo';
 import GLib from 'gi://GLib';
 import St from 'gi://St';
 
@@ -8,7 +9,8 @@ import {preferredSize, readPointer} from './shell.js';
 const SAMPLE_MS = 16;
 const MAX_POINTS = 512;
 const SHOW_AFTER_PX = 12;
-const LINE_WIDTH = 3;
+const DEFAULT_LINE_WIDTH = 6;
+const NAME_BOTTOM_GAP = 104;
 
 export class GestureOverlay {
     constructor() {
@@ -28,7 +30,6 @@ export class GestureOverlay {
         this._activeId = null;
         this._visible = false;
         this._sampleId = 0;
-        this._selfTest = false;
         this._nameId = 0;
         this._name = new St.Label({
             reactive: false,
@@ -58,12 +59,10 @@ export class GestureOverlay {
         const fallbackWidth = [...text].length * 32 + 28;
         const fallbackHeight = 52;
         const {width, height} = preferredSize(this._name, fallbackWidth, fallbackHeight);
-        const margin = 12;
-        let x = pointerX + 18;
-        let y = pointerY - height - 16;
-        x = Math.max(margin, Math.min(x, global.stage.width - width - margin));
-        y = Math.max(margin, Math.min(y, global.stage.height - height - margin));
-        this._name.set_position(Math.round(x), Math.round(y));
+        const place = readAppearance().namePlace === 'pointer'
+            ? placeNearPointer(pointerX, pointerY, width, height)
+            : placeBottomCenter(pointerX, pointerY, width, height);
+        this._name.set_position(place.x, place.y);
         this._nameId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1200, () => {
             this._nameId = 0;
             this._name?.hide();
@@ -78,7 +77,6 @@ export class GestureOverlay {
         this._points = [];
         this._visible = false;
         this._activeId = id;
-        this._selfTest = false;
         this._hideName();
         this._startSampling();
     }
@@ -92,7 +90,6 @@ export class GestureOverlay {
     endActive() {
         this._stopSampling();
         this._activeId = null;
-        this._selfTest = false;
         this._points = [];
         this._visible = false;
         this._hideName();
@@ -107,22 +104,9 @@ export class GestureOverlay {
         this._name?.hide();
     }
 
-    selfTest() {
-        this.begin('self-test');
-        this._selfTest = true;
-        this._selfTestId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 5000, () => {
-            this._selfTestId = 0;
-            if (this._selfTest)
-                this.end('self-test');
-            return GLib.SOURCE_REMOVE;
-        });
-    }
-
     destroy() {
         this._stopSampling();
         this._hideName();
-        if (this._selfTestId)
-            GLib.source_remove(this._selfTestId);
         this._name?.destroy();
         this._name = null;
         const stage = global.stage;
@@ -178,12 +162,80 @@ export class GestureOverlay {
             return;
         const cr = area.get_context();
         cr.setSourceRGBA(0.2, 0.6, 1.0, 0.9);
-        cr.setLineWidth(LINE_WIDTH);
-        const [x0, y0] = this._points[0];
-        cr.moveTo(x0, y0);
-        for (let i = 1; i < this._points.length; i++)
-            cr.lineTo(this._points[i][0], this._points[i][1]);
+        cr.setLineWidth(readAppearance().lineWidth);
+        cr.setLineCap(Cairo.LineCap.ROUND);
+        cr.setLineJoin(Cairo.LineJoin.ROUND);
+        traceSmooth(cr, this._points);
         cr.stroke();
         cr.$dispose();
+    }
+}
+
+function traceSmooth(cr, points) {
+    const count = points.length;
+    const at = index => points[Math.max(0, Math.min(count - 1, index))];
+    cr.moveTo(points[0][0], points[0][1]);
+    for (let i = 0; i < count - 1; i++) {
+        const p0 = at(i - 1);
+        const p1 = at(i);
+        const p2 = at(i + 1);
+        const p3 = at(i + 2);
+        cr.curveTo(
+            p1[0] + (p2[0] - p0[0]) / 6,
+            p1[1] + (p2[1] - p0[1]) / 6,
+            p2[0] - (p3[0] - p1[0]) / 6,
+            p2[1] - (p3[1] - p1[1]) / 6,
+            p2[0],
+            p2[1],
+        );
+    }
+}
+
+function placeBottomCenter(pointerX, pointerY, width, height) {
+    const monitor = monitorAt(pointerX, pointerY);
+    const x = monitor.x + Math.round((monitor.width - width) / 2);
+    const y = monitor.y + monitor.height - NAME_BOTTOM_GAP - height;
+    return clampOnStage(x, y, width, height);
+}
+
+function placeNearPointer(pointerX, pointerY, width, height) {
+    const margin = 12;
+    return clampOnStage(pointerX + 18, pointerY - height - 16, width, height, margin);
+}
+
+function clampOnStage(x, y, width, height, margin = 12) {
+    return {
+        x: Math.round(Math.max(margin, Math.min(x, global.stage.width - width - margin))),
+        y: Math.round(Math.max(margin, Math.min(y, global.stage.height - height - margin))),
+    };
+}
+
+function monitorAt(x, y) {
+    const layout = Main.layoutManager;
+    return layout.findMonitorForPoint?.(x, y)
+        || layout.primaryMonitor
+        || {x: 0, y: 0, width: global.stage.width, height: global.stage.height};
+}
+
+function readAppearance() {
+    const path = GLib.build_filenamev([
+        GLib.get_user_config_dir(),
+        'strokelet',
+        'appearance.json',
+    ]);
+    try {
+        const [ok, bytes] = GLib.file_get_contents(path);
+        if (!ok)
+            return {lineWidth: DEFAULT_LINE_WIDTH, namePlace: 'bottom'};
+        const data = JSON.parse(new TextDecoder().decode(bytes));
+        const width = Number(data.lineWidth);
+        return {
+            lineWidth: Number.isFinite(width)
+                ? Math.min(20, Math.max(2, Math.round(width)))
+                : DEFAULT_LINE_WIDTH,
+            namePlace: data.namePlace === 'pointer' ? 'pointer' : 'bottom',
+        };
+    } catch {
+        return {lineWidth: DEFAULT_LINE_WIDTH, namePlace: 'bottom'};
     }
 }
