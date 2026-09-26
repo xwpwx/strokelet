@@ -2,6 +2,8 @@
 
 在 GNOME Shell 45 到 50 的 Wayland 桌面上，用一笔轨迹或两个鼠标键发出一组快捷键，并在屏幕上画出不抢焦点的轨迹。普通点击仍然可用。
 
+这是一个自娱自乐的小工具。作者习惯用鼠标手势，升到 Ubuntu 26.04、桌面全面转向 Wayland 之后，用 vibe coding 做了它。
+
 ## 安装
 
 在仓库里打出安装包，再装上：
@@ -83,7 +85,7 @@ scripts/check-extension-install.sh
 
 ## 两个终端的启动顺序
 
-实机验收步骤见 [docs/acceptance/demo-checklist.md](docs/acceptance/demo-checklist.md)。摘要：
+实机验收可以按这个顺序：
 
 1. 确认当前是 Wayland。
 2. root 创建一次 `/run/strokelet/<uid>`，属主 root、组为当前用户主组、权限 0770。
@@ -109,6 +111,4 @@ scripts/run-demo.sh --device /dev/input/by-id/你的鼠标 --uid "$(id -u)" --se
 - 改 `overlay.js`、`indicator.js`、`transport.js` 后运行 `scripts/reload-extension.sh`。它会把扩展复制进用户目录，再让当前 Shell 关掉并重新打开。
 - 只有第一次安装，或者改了 `extension.js` 本身，才需要注销一次。GNOME 50 不能在 Wayland 上热重载扩展入口文件。
 
-默认阈值在识别规格里：起步 12 counts，上划至少 80 counts，最长 2500 ms。轨迹要移动约 12 个屏幕像素后才显示，线宽 3。
-
-生效文档见 [docs/index.md](docs/index.md)。当前任务见 [TASKS.md](TASKS.md)。
+默认阈值：起步 12 counts，上划至少 80 counts，最长 2500 ms。轨迹要移动约 12 个屏幕像素后才显示。

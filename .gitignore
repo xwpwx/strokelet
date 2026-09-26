@@ -1,6 +1,16 @@
 # Graphify 可再生导航缓存，不作为正式文档依据
 graphify-out/
 
+# 开发笔记只留在本机
+/AGENTS.md
+/CLAUDE.md
+/DECISIONS.md
+/INIT_CONTRACT.md
+/PROGRESS.md
+/QUALITY.md
+/TASKS.md
+/docs/
+
 # Rust
 /target/
 /dist/
