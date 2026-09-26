@@ -2,8 +2,8 @@ use evdev::KeyCode;
 
 use strokelet::{
     Chord, CopyOutput, Direction, EmitError, GestureConfig, KeySink, OutputEvent, TriggerButton,
-    chord_device_codes, evdev_from_gtk_keycode, key_names, parse_config, straight_points,
-    write_config,
+    WheelDirection, chord_device_codes, evdev_from_gtk_keycode, key_names, parse_config,
+    straight_points, write_config,
 };
 
 #[test]
@@ -322,6 +322,58 @@ impl KeySink for VecSink {
         self.events.push(event);
         Ok(())
     }
+}
+
+#[test]
+fn wheel_rule_is_separate_from_a_stroke() {
+    let config = parse_config(
+        r#"{
+        "version": 1,
+        "trigger": "right",
+        "rules": [
+            {"direction": "up", "modifiers": ["ctrl"], "key": "c"},
+            {"hold": "right", "wheel": "up", "modifiers": ["ctrl"], "key": "t", "name": "终端"}
+        ]
+    }"#,
+    )
+    .unwrap();
+    let rule = config
+        .rule_for_wheel(KeyCode::BTN_RIGHT.0, WheelDirection::Up)
+        .unwrap();
+    assert_eq!(rule.chord.key_name(), "t");
+    assert_eq!(rule.screen_name, "终端");
+    assert!(
+        config
+            .rule_for_wheel(KeyCode::BTN_RIGHT.0, WheelDirection::Down)
+            .is_none()
+    );
+    assert_eq!(
+        config.wheel_chords(),
+        vec![(KeyCode::BTN_RIGHT.0, WheelDirection::Up)]
+    );
+    assert!(
+        parse_config(
+            r#"{
+        "version": 1,
+        "trigger": "right",
+        "rules": [{"hold": "right", "wheel": "up", "button": "left", "modifiers": ["ctrl"], "key": "c"}]
+    }"#
+        )
+        .is_err()
+    );
+    assert!(
+        parse_config(
+            r#"{
+        "version": 1,
+        "trigger": "right",
+        "rules": [
+            {"wheel": "up", "modifiers": ["ctrl"], "key": "c"},
+            {"wheel": "up", "modifiers": ["ctrl"], "key": "v"}
+        ]
+    }"#
+        )
+        .is_err()
+    );
 }
 
 #[test]

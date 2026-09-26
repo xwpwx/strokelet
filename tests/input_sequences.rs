@@ -1,7 +1,7 @@
 use evdev::{EventType, KeyCode, RelativeAxisCode};
 use strokelet::{
-    Decision, DeviceProfile, DeviceReject, FrameProcessor, Limits, classify_device, event_tuple,
-    grab_allowed, key_event, rel_event, syn_dropped, syn_report, virtual_mouse_codes,
+    Decision, DeviceProfile, DeviceReject, FrameProcessor, Limits, WheelDirection, classify_device,
+    event_tuple, grab_allowed, key_event, rel_event, syn_dropped, syn_report, virtual_mouse_codes,
 };
 
 fn processor() -> FrameProcessor {
@@ -481,4 +481,92 @@ fn hold_left_drag_past_slop_presses_the_button() {
         40,
     );
     assert_eq!(release, vec![view_key(KeyCode::BTN_LEFT, 0), view_syn()]);
+}
+
+#[test]
+fn held_right_and_wheel_up_fires_once_per_notch_and_is_swallowed() {
+    let mut proc = processor();
+    proc.set_wheel_rules(&[(KeyCode::BTN_RIGHT.0, WheelDirection::Up)]);
+    feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_RIGHT, 1), syn_report()],
+        0,
+    );
+    let wheel = feed(
+        &mut proc,
+        &[
+            rel_event(RelativeAxisCode::REL_WHEEL_HI_RES, 120),
+            syn_report(),
+        ],
+        20,
+    );
+    assert!(wheel.is_empty());
+    assert_eq!(
+        proc.last_decision(),
+        Some(Decision::Wheel {
+            hold: KeyCode::BTN_RIGHT.0,
+            direction: WheelDirection::Up,
+            notch: 1,
+        })
+    );
+    let echo = feed(
+        &mut proc,
+        &[rel_event(RelativeAxisCode::REL_WHEEL, 1), syn_report()],
+        30,
+    );
+    assert!(echo.is_empty());
+    assert_eq!(
+        proc.last_decision(),
+        Some(Decision::Wheel {
+            hold: KeyCode::BTN_RIGHT.0,
+            direction: WheelDirection::Up,
+            notch: 1,
+        })
+    );
+    let again = feed(
+        &mut proc,
+        &[rel_event(RelativeAxisCode::REL_WHEEL, 1), syn_report()],
+        40,
+    );
+    assert!(again.is_empty());
+    assert_eq!(
+        proc.last_decision(),
+        Some(Decision::Wheel {
+            hold: KeyCode::BTN_RIGHT.0,
+            direction: WheelDirection::Up,
+            notch: 2,
+        })
+    );
+    feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_RIGHT, 0), syn_report()],
+        50,
+    );
+    assert_eq!(proc.last_decision(), None);
+}
+
+#[test]
+fn unmatched_wheel_direction_is_still_forwarded() {
+    let mut proc = processor();
+    proc.set_wheel_rules(&[(KeyCode::BTN_RIGHT.0, WheelDirection::Up)]);
+    feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_RIGHT, 1), syn_report()],
+        0,
+    );
+    let wheel = feed(
+        &mut proc,
+        &[rel_event(RelativeAxisCode::REL_WHEEL, -1), syn_report()],
+        20,
+    );
+    assert_eq!(
+        wheel,
+        vec![view_rel(RelativeAxisCode::REL_WHEEL, -1), view_syn()]
+    );
+    feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_RIGHT, 0), syn_report()],
+        30,
+    );
+    assert_eq!(proc.last_decision(), Some(Decision::Cancel));
 }

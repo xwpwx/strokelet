@@ -69,6 +69,7 @@ fn dispatch(args: Vec<String>) -> Result<(), String> {
         Some("capture-button") => {
             capture_button(args.get(1).map(String::as_str).unwrap_or("right"))
         }
+        Some("capture-wheel") => capture_wheel(),
         Some("check-gestures") => check_gestures(),
         Some("--help") | Some("help") | None => {
             print_help();
@@ -264,6 +265,17 @@ fn capture_stroke(trigger_name: &str) -> Result<(), String> {
     )
 }
 
+fn capture_wheel() -> Result<(), String> {
+    finish_sample(
+        take_sample_from_demo(
+            "capture-wheel",
+            "先按住一个鼠标键，再滚一下滚轮。",
+            "8 秒内没有滚到滚轮",
+        ),
+        capture_wheel_locally,
+    )
+}
+
 fn capture_button(trigger_name: &str) -> Result<(), String> {
     if TriggerButton::parse(trigger_name).is_none() {
         return Err(format!("unknown trigger {trigger_name}"));
@@ -395,6 +407,130 @@ fn trigger_phrase(trigger: TriggerButton) -> &'static str {
     }
 }
 
+fn capture_wheel_locally() -> Result<(), String> {
+    let mut grabbed = match grab_mice() {
+        Ok(devices) => devices,
+        Err(message) => {
+            emit_capture_line(&serde_json::json!({"type": "error", "message": message}));
+            return Err(message);
+        }
+    };
+    emit_capture_line(&serde_json::json!({
+        "type": "status",
+        "message": "鼠标已暂时独占。先按住一个鼠标键，再滚一下滚轮。",
+    }));
+    let value = read_wheel(&mut grabbed);
+    drop(grabbed);
+    emit_capture_line(&value);
+    if value.get("type").and_then(|kind| kind.as_str()) == Some("error") {
+        return Err(value
+            .get("message")
+            .and_then(|message| message.as_str())
+            .unwrap_or("capture failed")
+            .to_string());
+    }
+    Ok(())
+}
+
+fn read_wheel(devices: &mut [GrabbedDevice]) -> serde_json::Value {
+    let started = Instant::now();
+    let mut pressed_at: Option<Instant> = None;
+    let mut hold: Option<u16> = None;
+    loop {
+        let origin = pressed_at.unwrap_or(started);
+        let remaining = Duration::from_secs(5).saturating_sub(origin.elapsed());
+        if remaining.is_zero() {
+            let message = if hold.is_some() {
+                "没有滚到滚轮"
+            } else {
+                "5 秒内没有按下鼠标键"
+            };
+            return serde_json::json!({"type": "cancel", "message": message});
+        }
+        let mut fds: Vec<nix::libc::pollfd> = devices
+            .iter()
+            .map(|device| nix::libc::pollfd {
+                fd: device.0.as_raw_fd(),
+                events: nix::libc::POLLIN,
+                revents: 0,
+            })
+            .collect();
+        let timeout = i32::try_from(remaining.as_millis()).unwrap_or(i32::MAX);
+        let ready =
+            unsafe { nix::libc::poll(fds.as_mut_ptr(), fds.len() as nix::libc::nfds_t, timeout) };
+        if ready < 0 {
+            let err = std::io::Error::last_os_error();
+            if err.kind() == ErrorKind::Interrupted {
+                continue;
+            }
+            return serde_json::json!({"type": "error", "message": err.to_string()});
+        }
+        if ready == 0 {
+            continue;
+        }
+        for (index, slot) in fds.iter().enumerate() {
+            if slot.revents & nix::libc::POLLIN == 0 {
+                continue;
+            }
+            let events = match devices[index].0.fetch_events() {
+                Ok(events) => events,
+                Err(err) if err.kind() == ErrorKind::WouldBlock => continue,
+                Err(err) => {
+                    return serde_json::json!({"type": "error", "message": err.to_string()});
+                }
+            };
+            let mut direction = None;
+            for event in events {
+                if event.event_type() == EventType::KEY && event.value() == 1 {
+                    if MouseButton::from_code(event.code()).is_none() {
+                        return serde_json::json!({"type": "cancel", "message": "这个键不能当作起始键"});
+                    }
+                    if hold.is_none() {
+                        hold = Some(event.code());
+                        pressed_at = Some(Instant::now());
+                    }
+                } else if event.event_type() == EventType::KEY
+                    && event.value() == 0
+                    && hold == Some(event.code())
+                {
+                    return serde_json::json!({"type": "cancel", "message": "没有滚到滚轮"});
+                } else if event.event_type() == EventType::RELATIVE && hold.is_some() {
+                    let next = match event.code() {
+                        code if code == RelativeAxisCode::REL_WHEEL.0 && event.value() != 0 => {
+                            Some(if event.value() > 0 { "up" } else { "down" })
+                        }
+                        code if code == RelativeAxisCode::REL_HWHEEL.0 && event.value() != 0 => {
+                            Some(if event.value() > 0 { "right" } else { "left" })
+                        }
+                        code if code == RelativeAxisCode::REL_WHEEL_HI_RES.0
+                            && event.value() != 0
+                            && direction.is_none() =>
+                        {
+                            Some(if event.value() > 0 { "up" } else { "down" })
+                        }
+                        code if code == RelativeAxisCode::REL_HWHEEL_HI_RES.0
+                            && event.value() != 0
+                            && direction.is_none() =>
+                        {
+                            Some(if event.value() > 0 { "right" } else { "left" })
+                        }
+                        _ => None,
+                    };
+                    if next.is_some() {
+                        direction = next;
+                    }
+                }
+            }
+            if let (Some(hold_code), Some(direction)) = (hold, direction) {
+                let hold_name = MouseButton::from_code(hold_code)
+                    .map(MouseButton::name)
+                    .unwrap_or("right");
+                return serde_json::json!({"type": "wheel", "hold": hold_name, "wheel": direction});
+            }
+        }
+    }
+}
+
 fn capture_button_locally() -> Result<(), String> {
     let mut grabbed = match grab_mice() {
         Ok(devices) => devices,
@@ -497,7 +633,9 @@ fn read_button(devices: &mut [GrabbedDevice]) -> serde_json::Value {
 
 fn first_side_request(bytes: &[u8]) -> Option<&'static str> {
     let text = String::from_utf8_lossy(bytes);
-    if text.contains("\"capture-button\"") {
+    if text.contains("\"capture-wheel\"") {
+        Some("capture-wheel")
+    } else if text.contains("\"capture-button\"") {
         Some("capture-button")
     } else if text.contains("\"capture\"") {
         Some("capture")
@@ -654,6 +792,7 @@ Commands:
   capture-chord
   capture-stroke [right|middle|forward|back]
   capture-button
+  capture-wheel
   check-gestures
   run --auto
   run --device PATH --uid UID --session ID [--timeout-seconds 120]
@@ -829,7 +968,7 @@ fn drive(
                     .filter(|size| *size > 0)
                     .and_then(|size| first_side_request(&buf[..size]))
                 {
-                    Some(request @ ("capture" | "capture-button")) if grabbed => {
+                    Some(request @ ("capture" | "capture-button" | "capture-wheel")) if grabbed => {
                         if stream.write_all(b"{\"type\":\"ready\"}\n").is_ok() {
                             reply_sample(
                                 &mut sample,
@@ -838,16 +977,16 @@ fn drive(
                             sample = Some(SampleWait {
                                 stream,
                                 started: Instant::now(),
-                                kind: if request == "capture-button" {
-                                    SampleKind::Button
-                                } else {
-                                    SampleKind::Stroke
+                                kind: match request {
+                                    "capture-button" => SampleKind::Button,
+                                    "capture-wheel" => SampleKind::Wheel,
+                                    _ => SampleKind::Stroke,
                                 },
                             });
                             eprintln!("strokelet: waiting for one sample");
                         }
                     }
-                    Some("capture" | "capture-button") => {
+                    Some("capture" | "capture-button" | "capture-wheel") => {
                         let _ = stream.write_all(b"{\"type\":\"offline\"}\n");
                     }
                     Some("reload") => match GestureConfig::load(&config_path()) {
@@ -948,6 +1087,11 @@ fn drive(
                 .as_ref()
                 .is_some_and(|wait| wait.kind == SampleKind::Button),
         );
+        processor.set_wheel_capture(
+            sample
+                .as_ref()
+                .is_some_and(|wait| wait.kind == SampleKind::Wheel),
+        );
         if grabbed {
             match device.fetch_events() {
                 Ok(events) => {
@@ -984,6 +1128,7 @@ fn drive(
 enum SampleKind {
     Stroke,
     Button,
+    Wheel,
 }
 
 struct SampleWait {
@@ -1030,6 +1175,13 @@ fn publish_gesture(
         && let Some(decision) = live.processor.last_decision()
     {
         let id = *live.gesture_id;
+        if matches!(decision, Decision::Wheel { .. })
+            && !was_tracking
+            && let Ok(line) = live.link.begin(id)
+        {
+            eprintln!("strokelet: {line}");
+            send_line(live.client, &line);
+        }
         *live.gesture_id += 1;
         let session = session_observation(facts);
         let desktop = live.link.desktop(session, Observation::Known(true), now_ms);
@@ -1069,6 +1221,13 @@ fn publish_gesture(
                     let matched = live
                         .rules
                         .rule_for_button(hold, press)
+                        .map(|rule| (rule.chord.clone(), rule.screen_name.clone()));
+                    inject_matched(live.keyboard, matched, &mut screen_name)
+                }
+                (Decision::Wheel { hold, direction, .. }, Injection::CopyOnce) => {
+                    let matched = live
+                        .rules
+                        .rule_for_wheel(hold, direction)
                         .map(|rule| (rule.chord.clone(), rule.screen_name.clone()));
                     inject_matched(live.keyboard, matched, &mut screen_name)
                 }
@@ -1117,6 +1276,7 @@ fn poll_sample(sample: &mut Option<SampleWait>) {
     {
         let message = match sample.as_ref().map(|wait| wait.kind) {
             Some(SampleKind::Button) => "8 秒内没有按到另一个鼠标键",
+            Some(SampleKind::Wheel) => "8 秒内没有滚到滚轮",
             _ => "8 秒内没有画完一笔",
         };
         reply_sample(
@@ -1140,6 +1300,7 @@ fn reply_sample(sample: &mut Option<SampleWait>, value: &serde_json::Value) {
 fn apply_rules(processor: &mut FrameProcessor, rules: &GestureConfig) {
     processor.set_trigger(rules.trigger.evdev_code());
     processor.set_button_chords(&rules.button_chords());
+    processor.set_wheel_rules(&rules.wheel_chords());
 }
 
 fn inject_matched(
@@ -1177,6 +1338,15 @@ fn sample_payload(
         }
         (SampleKind::Button, _) => {
             serde_json::json!({"type": "cancel", "message": "没有按到另一个鼠标键"})
+        }
+        (SampleKind::Wheel, Decision::Wheel { hold, direction, .. }) => {
+            let hold_name = MouseButton::from_code(hold)
+                .map(MouseButton::name)
+                .unwrap_or("right");
+            serde_json::json!({"type": "wheel", "hold": hold_name, "wheel": direction.name()})
+        }
+        (SampleKind::Wheel, _) => {
+            serde_json::json!({"type": "cancel", "message": "没有滚到滚轮"})
         }
         (_, Decision::Stroke) => serde_json::json!({"type": "stroke", "points": points}),
         (_, Decision::RightClick) => serde_json::json!({"type": "cancel", "message": "轨迹太短"}),
@@ -1583,6 +1753,10 @@ mod tests {
 
     #[test]
     fn capture_and_reload_stay_off_the_extension_socket() {
+        assert_eq!(
+            first_side_request(br#"{"type":"capture-wheel"}"#),
+            Some("capture-wheel")
+        );
         assert_eq!(
             first_side_request(br#"{"type":"capture-button"}"#),
             Some("capture-button")

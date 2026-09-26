@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::stroke::{MAX_RULES, best_match, conflicts, straight_points};
-use crate::{Chord, Direction};
+use crate::{Chord, Direction, WheelDirection};
 
 pub const CONFIG_VERSION: u32 = 1;
 
@@ -124,6 +124,8 @@ pub struct StrokeRule {
     pub hold: Option<MouseButton>,
     /// 起始键按住后再按的键。
     pub button: Option<MouseButton>,
+    /// 起始键按住后滚动的方向。和 `button` 互斥。
+    pub wheel: Option<WheelDirection>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -158,6 +160,7 @@ impl GestureConfig {
                 screen_name: String::new(),
                 hold: None,
                 button: None,
+                wheel: None,
             }],
         }
     }
@@ -170,7 +173,7 @@ impl GestureConfig {
         let mut templates = Vec::new();
         let mut indexes = Vec::new();
         for (index, rule) in self.rules.iter().enumerate() {
-            if rule.button.is_none() {
+            if rule.button.is_none() && rule.wheel.is_none() {
                 templates.push(rule.points.clone());
                 indexes.push(index);
             }
@@ -190,6 +193,20 @@ impl GestureConfig {
         self.rules
             .iter()
             .filter_map(|rule| Some((rule.hold?.evdev_code(), rule.button?.evdev_code())))
+            .collect()
+    }
+
+    pub fn rule_for_wheel(&self, hold: u16, direction: WheelDirection) -> Option<&StrokeRule> {
+        let hold = MouseButton::from_code(hold)?;
+        self.rules
+            .iter()
+            .find(|rule| rule.hold == Some(hold) && rule.wheel == Some(direction))
+    }
+
+    pub fn wheel_chords(&self) -> Vec<(u16, WheelDirection)> {
+        self.rules
+            .iter()
+            .filter_map(|rule| Some((rule.hold?.evdev_code(), rule.wheel?)))
             .collect()
     }
 
@@ -246,6 +263,8 @@ struct RuleDto {
     hold: String,
     #[serde(default)]
     button: String,
+    #[serde(default)]
+    wheel: String,
 }
 
 pub fn parse_config(text: &str) -> Result<GestureConfig, String> {
@@ -262,18 +281,39 @@ pub fn parse_config(text: &str) -> Result<GestureConfig, String> {
         }
         let chord = chord_from_rule(&rule)?;
         let screen_name = screen_name_from(&rule.name)?;
-        if !rule.button.is_empty() {
+        if !rule.button.is_empty() || !rule.wheel.is_empty() {
+            if !rule.button.is_empty() && !rule.wheel.is_empty() {
+                return Err("这条规则不能同时有鼠标组合和滚轮".into());
+            }
             if !rule.points.is_empty() || !rule.direction.is_empty() {
                 return Err("这条规则不能同时有轨迹和鼠标组合".into());
             }
-            let button = MouseButton::parse(&rule.button)
-                .ok_or_else(|| format!("unknown button {}", rule.button))?;
             let hold = if rule.hold.is_empty() {
                 MouseButton::from_trigger(trigger)
             } else {
                 MouseButton::parse(&rule.hold)
                     .ok_or_else(|| format!("unknown button {}", rule.hold))?
             };
+            if !rule.wheel.is_empty() {
+                let direction = WheelDirection::parse(&rule.wheel)
+                    .ok_or_else(|| format!("unknown wheel {}", rule.wheel))?;
+                if rules.iter().any(|existing: &StrokeRule| {
+                    existing.hold == Some(hold) && existing.wheel == Some(direction)
+                }) {
+                    return Err("这个滚轮动作已经有一条规则".into());
+                }
+                rules.push(StrokeRule {
+                    points: Vec::new(),
+                    chord,
+                    screen_name,
+                    hold: Some(hold),
+                    button: None,
+                    wheel: Some(direction),
+                });
+                continue;
+            }
+            let button = MouseButton::parse(&rule.button)
+                .ok_or_else(|| format!("unknown button {}", rule.button))?;
             if hold == button {
                 return Err("组合的两个键不能相同".into());
             }
@@ -288,12 +328,15 @@ pub fn parse_config(text: &str) -> Result<GestureConfig, String> {
                 screen_name,
                 hold: Some(hold),
                 button: Some(button),
+                wheel: None,
             });
             continue;
         }
         let points = points_from_rule(&rule)?;
         if rules.iter().any(|existing: &StrokeRule| {
-            existing.button.is_none() && conflicts(&existing.points, &points)
+            existing.button.is_none()
+                && existing.wheel.is_none()
+                && conflicts(&existing.points, &points)
         }) {
             return Err("这条轨迹和已有的太像".into());
         }
@@ -303,6 +346,7 @@ pub fn parse_config(text: &str) -> Result<GestureConfig, String> {
             screen_name,
             hold: None,
             button: None,
+            wheel: None,
         });
     }
     Ok(GestureConfig { trigger, rules })
@@ -385,7 +429,15 @@ pub fn write_config(path: &Path, config: &GestureConfig) -> Result<(), ConfigErr
     }
     let mut rules = Vec::new();
     for rule in &config.rules {
-        let mut value = if let Some(button) = rule.button {
+        let mut value = if let Some(direction) = rule.wheel {
+            serde_json::json!({
+                "hold": rule.hold.map(MouseButton::name).unwrap_or("right"),
+                "wheel": direction.name(),
+                "modifierCodes": rule.chord.modifier_codes(),
+                "keyCode": rule.chord.key_code(),
+                "label": rule.chord.key_name(),
+            })
+        } else if let Some(button) = rule.button {
             serde_json::json!({
                 "hold": rule.hold.map(MouseButton::name).unwrap_or("right"),
                 "button": button.name(),

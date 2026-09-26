@@ -133,7 +133,7 @@ app.connect('activate', () => {
         if (rules.length === 0) {
             const empty = new Adw.ActionRow({
                 title: '还没有规则',
-                subtitle: '添加后，选画轨迹或按两个鼠标键，再录快捷键。',
+                subtitle: '添加后，选画轨迹、按两个鼠标键，或按住再滚轮，再录快捷键。',
             });
             rulesGroup.add(empty);
             ruleRows.push(empty);
@@ -147,7 +147,7 @@ app.connect('activate', () => {
                 subtitle_lines: 2,
             });
             const tag = new Gtk.Label({
-                label: hasButton(rule) ? '组合' : '轨迹',
+                label: kindTag(rule),
                 css_classes: ['caption', 'kind-tag'],
             });
             row.add_prefix(tag);
@@ -429,6 +429,8 @@ function sendReload() {
 }
 
 function shapeOf(rule, triggerName) {
+    if (hasWheel(rule))
+        return `按住${buttonPhrase(rule.hold || 'right')}，滚轮${wheelPhrase(rule.wheel)}`;
     if (hasButton(rule))
         return `按住${buttonPhrase(rule.hold || 'right')}，再按${buttonPhrase(rule.button)}`;
     const trigger = buttonPhrase(triggerName || 'right');
@@ -437,6 +439,16 @@ function shapeOf(rule, triggerName) {
     if (rule.direction)
         return `按住${trigger}${directionPhrase(rule.direction)}`;
     return '还没设置动作';
+}
+
+function wheelPhrase(name) {
+    return {up: '向上', down: '向下', left: '向左', right: '向右'}[name] || name;
+}
+
+function kindTag(rule) {
+    if (hasWheel(rule))
+        return '滚轮';
+    return hasButton(rule) ? '组合' : '轨迹';
 }
 
 function directionPhrase(name) {
@@ -463,6 +475,10 @@ function rowSubtitle(rule, triggerName) {
 
 function hasButton(rule) {
     return typeof rule.button === 'string' && rule.button.length > 0;
+}
+
+function hasWheel(rule) {
+    return typeof rule.wheel === 'string' && rule.wheel.length > 0;
 }
 
 function hasStroke(rule) {
@@ -655,12 +671,20 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
     const page = new Adw.PreferencesPage();
     const actionGroup = new Adw.PreferencesGroup({
         title: '怎么触发',
-        description: '只选一种。画轨迹用窗口里的触发键；鼠标组合以你先按下的键为准。',
+        description: '只选一种。画轨迹用窗口里的触发键。鼠标组合和滚轮以你先按下的键为准。',
     });
-    const strokeRadio = new Gtk.CheckButton({active: !hasButton(draft), valign: Gtk.Align.CENTER});
+    const strokeRadio = new Gtk.CheckButton({
+        active: !hasButton(draft) && !hasWheel(draft),
+        valign: Gtk.Align.CENTER,
+    });
     const chordRadio = new Gtk.CheckButton({
         group: strokeRadio,
         active: hasButton(draft),
+        valign: Gtk.Align.CENTER,
+    });
+    const wheelRadio = new Gtk.CheckButton({
+        group: strokeRadio,
+        active: hasWheel(draft),
         valign: Gtk.Align.CENTER,
     });
     const strokeRow = new Adw.ActionRow({title: '画出轨迹', activatable_widget: strokeRadio});
@@ -671,8 +695,13 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
     const chordButton = new Gtk.Button({valign: Gtk.Align.CENTER});
     chordRow.add_prefix(chordRadio);
     chordRow.add_suffix(chordButton);
+    const wheelRow = new Adw.ActionRow({title: '按住再滚轮', activatable_widget: wheelRadio});
+    const wheelButton = new Gtk.Button({valign: Gtk.Align.CENTER});
+    wheelRow.add_prefix(wheelRadio);
+    wheelRow.add_suffix(wheelButton);
     actionGroup.add(strokeRow);
     actionGroup.add(chordRow);
+    actionGroup.add(wheelRow);
     page.add(actionGroup);
 
     const previewGroup = new Adw.PreferencesGroup({
@@ -723,7 +752,7 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
         stopProcess();
         stopProcess = () => {};
     };
-    const recordButtons = [drawButton, chordButton, shortcutButton];
+    const recordButtons = [drawButton, chordButton, wheelButton, shortcutButton];
     const setRecording = busy => {
         recordButtons.forEach(button => {
             button.sensitive = !busy;
@@ -731,6 +760,7 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
         apply.sensitive = !busy;
         strokeRadio.sensitive = !busy;
         chordRadio.sensitive = !busy;
+        wheelRadio.sensitive = !busy;
     };
     const showStatus = (message, cancellable) => {
         banner.title = message || '';
@@ -745,8 +775,12 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
         chordRow.subtitle = hasButton(draft)
             ? shapeOf(draft, triggerName)
             : '先按住一个键，再按另一个';
+        wheelRow.subtitle = hasWheel(draft)
+            ? shapeOf(draft, triggerName)
+            : '先按住一个键，再滚一下滚轮';
         drawButton.label = hasStroke(draft) ? '重录' : '录制';
         chordButton.label = hasButton(draft) ? '重录' : '录制';
+        wheelButton.label = hasWheel(draft) ? '重录' : '录制';
         shortcutRow.subtitle = hasChord(draft) ? labelOf(draft) : '还没录';
         shortcutButton.label = hasChord(draft) ? '重录' : '录制';
         previewGroup.visible = strokeRadio.active;
@@ -757,6 +791,8 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
     };
     refreshEditor();
     strokeRadio.connect('toggled', () => refreshEditor());
+    chordRadio.connect('toggled', () => refreshEditor());
+    wheelRadio.connect('toggled', () => refreshEditor());
 
     const keys = new Gtk.EventControllerKey();
     page.add_controller(keys);
@@ -814,6 +850,7 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
                 delete draft.direction;
                 delete draft.button;
                 delete draft.hold;
+                delete draft.wheel;
                 draft.points = msg.points;
                 setRecording(false);
                 showStatus('轨迹已记下。点完成后才会写进这条规则。', false);
@@ -837,10 +874,36 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
             if (msg.type === 'button') {
                 delete draft.direction;
                 delete draft.points;
+                delete draft.wheel;
                 draft.hold = msg.hold;
                 draft.button = msg.button;
                 setRecording(false);
                 showStatus('鼠标组合已记下。点完成后才会写进这条规则。', false);
+                refreshEditor();
+                return false;
+            }
+            if (msg.type === 'status') {
+                showStatus(msg.message || banner.title, true);
+                return true;
+            }
+            setRecording(false);
+            showStatus(msg.message || '这次没有保存', false);
+            refreshEditor();
+            return false;
+        }));
+    });
+    wheelButton.connect('clicked', () => {
+        wheelRadio.active = true;
+        showStatus('先按住一个鼠标键，再滚一下滚轮。向上、向下或左右都可以。', true);
+        begin(['capture-wheel'], line => readMessage(line, msg => {
+            if (msg.type === 'wheel') {
+                delete draft.direction;
+                delete draft.points;
+                delete draft.button;
+                draft.hold = msg.hold;
+                draft.wheel = msg.wheel;
+                setRecording(false);
+                showStatus('滚轮动作已记下。点完成后才会写进这条规则。', false);
                 refreshEditor();
                 return false;
             }
@@ -884,17 +947,27 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
     apply.connect('clicked', () => {
         if (strokeRadio.active) {
             if (!hasStroke(draft)) {
-                showStatus('先画出轨迹，或改选鼠标组合。', false);
+                showStatus('先画出轨迹，或改选另一种动作。', false);
                 return;
             }
             delete draft.button;
             delete draft.hold;
-        } else if (!hasButton(draft)) {
-            showStatus('先按下两个鼠标键，或改选画出轨迹。', false);
+            delete draft.wheel;
+        } else if (chordRadio.active) {
+            if (!hasButton(draft)) {
+                showStatus('先按下两个鼠标键，或改选另一种动作。', false);
+                return;
+            }
+            delete draft.direction;
+            delete draft.points;
+            delete draft.wheel;
+        } else if (!hasWheel(draft)) {
+            showStatus('先按住鼠标键并滚动滚轮，或改选另一种动作。', false);
             return;
         } else {
             delete draft.direction;
             delete draft.points;
+            delete draft.button;
         }
         if (!hasChord(draft)) {
             showStatus('再录一组快捷键。', false);

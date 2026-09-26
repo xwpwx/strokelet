@@ -73,9 +73,7 @@ export const StrokeletIndicator = GObject.registerClass({
     _openSettings() {
         this.menu.close();
         try {
-            const command = Gio.File.new_for_path('/usr/bin/strokelet').query_exists(null)
-                ? '/usr/bin/strokelet'
-                : 'strokelet';
+            const command = strokeletCommand();
             const bundled = bundledSettings();
             if (bundled) {
                 const launcher = Gio.SubprocessLauncher.new(Gio.SubprocessFlags.NONE);
@@ -96,6 +94,15 @@ function spawn(argv) {
     } catch (error) {
         log(`strokelet: ${argv.join(' ')} failed: ${error}`);
     }
+}
+
+function strokeletCommand() {
+    const local = GLib.build_filenamev([GLib.get_home_dir(), '.local', 'bin', 'strokelet']);
+    if (Gio.File.new_for_path(local).query_exists(null))
+        return local;
+    if (Gio.File.new_for_path('/usr/bin/strokelet').query_exists(null))
+        return '/usr/bin/strokelet';
+    return 'strokelet';
 }
 
 function bundledSettings() {

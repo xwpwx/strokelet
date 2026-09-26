@@ -20,7 +20,7 @@ pub use copy::{
     key_names,
 };
 pub use copy_gate::{CopyGate, DesktopState, Injection, Modifiers, Observation, SessionState};
-pub use gesture::{Decision, Direction, Gesture, Limits};
+pub use gesture::{Decision, Direction, Gesture, Limits, WheelDirection};
 pub use input::{
     DeviceProfile, DeviceReject, FrameProcessor, ListedMouse, PickError, classify_device,
     event_tuple, grab_allowed, key_event, pick_mouse, rel_event, syn_dropped, syn_report,

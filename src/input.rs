@@ -3,7 +3,7 @@ use evdev::{
 };
 
 use crate::config::MouseButton;
-use crate::{Decision, Gesture, Limits};
+use crate::{Decision, Gesture, Limits, WheelDirection};
 
 const WHEEL_CODES: [u16; 4] = [
     RelativeAxisCode::REL_WHEEL.0,
@@ -165,8 +165,13 @@ pub struct FrameProcessor {
     last_decision: Option<Decision>,
     click_slop: f64,
     chord_pairs: Vec<(u16, u16)>,
+    wheel_rules: Vec<(u16, WheelDirection)>,
     button_capture: bool,
+    wheel_capture: bool,
     fired_chord: Option<(u16, u16)>,
+    consumed: bool,
+    notch: u32,
+    suppress_echo: Option<WheelDirection>,
     swallow: Option<u16>,
     pending_hold: Option<u16>,
     hold_x: f64,
@@ -186,8 +191,13 @@ impl FrameProcessor {
             last_decision: None,
             click_slop: limits.click_slop_counts,
             chord_pairs: Vec::new(),
+            wheel_rules: Vec::new(),
             button_capture: false,
+            wheel_capture: false,
             fired_chord: None,
+            consumed: false,
+            notch: 0,
+            suppress_echo: None,
             swallow: None,
             pending_hold: None,
             hold_x: 0.0,
@@ -200,9 +210,18 @@ impl FrameProcessor {
         self.chord_pairs = pairs.to_vec();
     }
 
+    pub fn set_wheel_rules(&mut self, rules: &[(u16, WheelDirection)]) {
+        self.wheel_rules = rules.to_vec();
+    }
+
     /// 录制组合键时，先按下的鼠标键是起始键，不限于当前轨迹触发键。
     pub fn set_button_capture(&mut self, enabled: bool) {
         self.button_capture = enabled;
+    }
+
+    /// 录制滚轮时，先按下的鼠标键是起始键，下一格滚轮完成这次录制。
+    pub fn set_wheel_capture(&mut self, enabled: bool) {
+        self.wheel_capture = enabled;
     }
 
     pub fn last_decision(&self) -> Option<Decision> {
@@ -222,6 +241,8 @@ impl FrameProcessor {
             self.gesture.abandon();
             self.tracking = false;
             self.fired_chord = None;
+            self.consumed = false;
+            self.suppress_echo = None;
             self.swallow = None;
             self.pending_hold = None;
             self.hold_forwarded = false;
@@ -249,6 +270,10 @@ impl FrameProcessor {
         let frame = std::mem::take(&mut self.frame);
         let mut dx = 0;
         let mut dy = 0;
+        let mut wheel_y = 0;
+        let mut wheel_x = 0;
+        let mut wheel_y_hi = 0;
+        let mut wheel_x_hi = 0;
         let mut right_down = false;
         let mut right_up = false;
         let mut cancel_now = false;
@@ -258,7 +283,11 @@ impl FrameProcessor {
             match self.classify_part(event) {
                 Part::RelX(value) => dx += value,
                 Part::RelY(value) => dy += value,
-                Part::Wheel | Part::OtherKey => cancel_now = true,
+                Part::WheelY(value) => wheel_y += value,
+                Part::WheelX(value) => wheel_x += value,
+                Part::WheelYHi(value) => wheel_y_hi += value,
+                Part::WheelXHi(value) => wheel_x_hi += value,
+                Part::OtherKey => cancel_now = true,
                 Part::RightDown => right_down = true,
                 Part::RightUp => right_up = true,
                 Part::ExtraDown(code) => extra_down = Some(code),
@@ -284,7 +313,8 @@ impl FrameProcessor {
                 .pending_hold
                 .is_some_and(|hold| self.claims_pair(hold, trigger_code));
         let mut decided_this_frame = false;
-        if self.button_capture
+        let capture_hold = self.button_capture || self.wheel_capture;
+        if capture_hold
             && right_down
             && !self.tracking
             && self.pending_hold.is_none()
@@ -306,6 +336,7 @@ impl FrameProcessor {
             self.pressed_at_ms = self.now_ms;
             self.last_decision = None;
             self.fired_chord = None;
+            self.consumed = false;
         }
         let held_ms = self.now_ms.saturating_sub(self.pressed_at_ms);
         if self.tracking && (dx != 0 || dy != 0) {
@@ -329,6 +360,31 @@ impl FrameProcessor {
         let claimed = self.tracking
             && self.fired_chord.is_none()
             && extra_down.is_some_and(|code| self.claims_pair(trigger_code, code));
+        let mut swallow_wheel = false;
+        if let Some((direction, hi_only)) =
+            wheel_notch(wheel_y, wheel_x, wheel_y_hi, wheel_x_hi)
+        {
+            let echo = self.suppress_echo == Some(direction)
+                && !hi_only
+                && wheel_y_hi == 0
+                && wheel_x_hi == 0;
+            if echo {
+                swallow_wheel = self.consumed;
+                self.suppress_echo = None;
+            } else if let Some(hold) = self.active_hold()
+                && self.claims_wheel(hold, direction)
+            {
+                self.fire_wheel(hold, direction);
+                decided_this_frame = true;
+                swallow_wheel = true;
+                self.suppress_echo = hi_only.then_some(direction);
+            } else {
+                self.suppress_echo = None;
+                cancel_now = true;
+            }
+        } else {
+            self.suppress_echo = None;
+        }
         if self.tracking && cancel_now {
             self.gesture.cancel();
         } else if let Some(code) = extra_down.filter(|_| claimed) {
@@ -337,7 +393,7 @@ impl FrameProcessor {
         } else if self.tracking && extra_down.is_some() && self.pending_hold != extra_down {
             self.gesture.cancel();
         }
-        let started_drag = !self.button_capture
+        let started_drag = !capture_hold
             && self.fired_chord.is_none()
             && !self.hold_forwarded
             && self.pending_hold.is_some()
@@ -363,6 +419,7 @@ impl FrameProcessor {
                 !is_trigger_button(event, trigger_code)
                     && !is_hidden(event, hide_press)
                     && !is_hidden(event, hide_hold)
+                    && !(swallow_wheel && is_wheel_event(event))
             })
             .collect();
         if !forwarded.is_empty() {
@@ -386,23 +443,27 @@ impl FrameProcessor {
             .filter(|hold| (*hold == trigger_code && right_up) || extra_up == Some(*hold));
         if let Some(hold) = released_hold {
             self.pending_hold = None;
-            if self.fired_chord.is_some() {
+            if self.fired_chord.is_some() || self.consumed {
                 self.fired_chord = None;
+                self.consumed = false;
+                self.suppress_echo = None;
                 if !decided_this_frame {
                     self.last_decision = None;
                 }
             } else if self.hold_forwarded {
                 self.hold_forwarded = false;
-            } else if self.button_capture {
+            } else if capture_hold {
                 self.last_decision = Some(Decision::Cancel);
             } else {
                 out.extend(replay_click(hold));
             }
         }
         if right_up && self.tracking {
-            if self.fired_chord.take().is_some() {
+            if self.fired_chord.take().is_some() || self.consumed {
                 let _ = self.gesture.release(held_ms);
                 self.tracking = false;
+                self.consumed = false;
+                self.suppress_echo = None;
                 if !decided_this_frame {
                     self.last_decision = None;
                 }
@@ -420,6 +481,7 @@ impl FrameProcessor {
 
     fn fire_pair(&mut self, hold: u16, press: u16) {
         self.fired_chord = Some((hold, press));
+        self.consumed = true;
         self.swallow = Some(press);
         if self.tracking {
             self.gesture.cancel();
@@ -427,11 +489,32 @@ impl FrameProcessor {
         self.last_decision = Some(Decision::Button { hold, press });
     }
 
+    fn fire_wheel(&mut self, hold: u16, direction: WheelDirection) {
+        self.consumed = true;
+        self.notch = self.notch.wrapping_add(1);
+        if self.tracking {
+            self.gesture.cancel();
+        }
+        self.last_decision = Some(Decision::Wheel {
+            hold,
+            direction,
+            notch: self.notch,
+        });
+    }
+
+    fn active_hold(&self) -> Option<u16> {
+        self.pending_hold
+            .or_else(|| self.tracking.then_some(self.trigger_code))
+    }
+
     fn is_separate_hold(&self, code: u16) -> bool {
         if code == self.trigger_code || MouseButton::from_code(code).is_none() {
             return false;
         }
-        self.button_capture || self.chord_pairs.iter().any(|(hold, _)| *hold == code)
+        self.button_capture
+            || self.wheel_capture
+            || self.chord_pairs.iter().any(|(hold, _)| *hold == code)
+            || self.wheel_rules.iter().any(|(hold, _)| *hold == code)
     }
 
     fn claims_pair(&self, hold: u16, press: u16) -> bool {
@@ -445,6 +528,39 @@ impl FrameProcessor {
             return true;
         }
         self.chord_pairs.contains(&(hold, press))
+    }
+
+    fn claims_wheel(&self, hold: u16, direction: WheelDirection) -> bool {
+        if self.wheel_capture && MouseButton::from_code(hold).is_some() {
+            return true;
+        }
+        self.wheel_rules
+            .iter()
+            .any(|(rule_hold, rule_direction)| *rule_hold == hold && *rule_direction == direction)
+    }
+}
+
+fn wheel_notch(y: i32, x: i32, y_hi: i32, x_hi: i32) -> Option<(WheelDirection, bool)> {
+    let vertical = if y != 0 { y } else { y_hi };
+    let horizontal = if x != 0 { x } else { x_hi };
+    if vertical == 0 && horizontal == 0 {
+        return None;
+    }
+    let use_vertical = vertical != 0 && (horizontal == 0 || vertical.abs() >= horizontal.abs());
+    if use_vertical {
+        let direction = if vertical > 0 {
+            WheelDirection::Up
+        } else {
+            WheelDirection::Down
+        };
+        Some((direction, y == 0))
+    } else {
+        let direction = if horizontal > 0 {
+            WheelDirection::Right
+        } else {
+            WheelDirection::Left
+        };
+        Some((direction, x == 0))
     }
 }
 
@@ -461,7 +577,10 @@ fn replay_click(code: u16) -> [InputEvent; 4] {
 enum Part {
     RelX(i32),
     RelY(i32),
-    Wheel,
+    WheelY(i32),
+    WheelX(i32),
+    WheelYHi(i32),
+    WheelXHi(i32),
     RightDown,
     RightUp,
     ExtraDown(u16),
@@ -476,7 +595,14 @@ impl FrameProcessor {
             return match event.code() {
                 code if code == RelativeAxisCode::REL_X.0 => Part::RelX(event.value()),
                 code if code == RelativeAxisCode::REL_Y.0 => Part::RelY(event.value()),
-                code if WHEEL_CODES.contains(&code) => Part::Wheel,
+                code if code == RelativeAxisCode::REL_WHEEL.0 => Part::WheelY(event.value()),
+                code if code == RelativeAxisCode::REL_HWHEEL.0 => Part::WheelX(event.value()),
+                code if code == RelativeAxisCode::REL_WHEEL_HI_RES.0 => {
+                    Part::WheelYHi(event.value())
+                }
+                code if code == RelativeAxisCode::REL_HWHEEL_HI_RES.0 => {
+                    Part::WheelXHi(event.value())
+                }
                 _ => Part::Other,
             };
         }
@@ -503,6 +629,10 @@ impl FrameProcessor {
 
 fn is_hidden(event: &InputEvent, code: Option<u16>) -> bool {
     code.is_some_and(|code| event.event_type() == EventType::KEY && event.code() == code)
+}
+
+fn is_wheel_event(event: &InputEvent) -> bool {
+    event.event_type() == EventType::RELATIVE && WHEEL_CODES.contains(&event.code())
 }
 
 fn is_trigger_button(event: &InputEvent, trigger_code: u16) -> bool {

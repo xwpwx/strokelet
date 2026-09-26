@@ -7,6 +7,36 @@ pub enum Direction {
     Right,
 }
 
+/// 滚轮的一格。向上是远离使用者的方向。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WheelDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+impl WheelDirection {
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "up" => Some(WheelDirection::Up),
+            "down" => Some(WheelDirection::Down),
+            "left" => Some(WheelDirection::Left),
+            "right" => Some(WheelDirection::Right),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            WheelDirection::Up => "up",
+            WheelDirection::Down => "down",
+            WheelDirection::Left => "left",
+            WheelDirection::Right => "right",
+        }
+    }
+}
+
 /// 一次按键手势的决策。同一次按下的重复释放返回 [`Decision::None`]。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
@@ -19,6 +49,12 @@ pub enum Decision {
         hold: u16,
         press: u16,
     },
+    /// 按住 `hold` 后滚过一格。`notch` 用来区分同一次按住里的连续滚动。
+    Wheel {
+        hold: u16,
+        direction: WheelDirection,
+        notch: u32,
+    },
 }
 
 impl Decision {
@@ -27,7 +63,10 @@ impl Decision {
     }
 
     pub fn injects(self) -> bool {
-        matches!(self, Decision::Stroke | Decision::Button { .. })
+        matches!(
+            self,
+            Decision::Stroke | Decision::Button { .. } | Decision::Wheel { .. }
+        )
     }
 }
 
