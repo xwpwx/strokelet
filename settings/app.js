@@ -60,12 +60,14 @@ function openSettingsWindow(language) {
     toolbar.add_top_bar(dirtyBanner);
 
     const page = new Adw.PreferencesPage();
+    const languageGroup = new Adw.PreferencesGroup();
     const languageRow = new Adw.ComboRow({
         title: t('language.label'),
         model: modelOf(['中文', 'English']),
     });
     languageRow.selected = language === 'en' ? 1 : 0;
-    page.add(languageRow);
+    languageGroup.add(languageRow);
+    page.add(languageGroup);
     const mice = listMice();
     const savedMouse = readDevice();
     const mouseGroup = new Adw.PreferencesGroup({
