@@ -133,3 +133,11 @@
 - 否决方案：起始键永远等于全局轨迹触发键。
 - 约束/影响：旧配置只写了 `button`、没写 `hold` 时，起始键仍是这份文件里的轨迹触发键。两个键相同不能保存。同一对按键只能有一条规则。松开起始键时如果没按到第二个键，这一下仍当作普通点击。正式需求仍不承认设置界面。
 - 相关文档：docs/drafts/2026-09-26-strokelet-button-chord-plan.md（非生效版本；其中「起始键只能是全局触发键」已被本条覆盖）
+
+### 2026-09-26: 用 deb 安装后登录即接管鼠标
+
+- 决策：deb 安装程序、系统扩展和用户服务。服务启动前以 root 只创建 `/run/strokelet/<uid>`。`strokelet run --auto` 自己找 Wayland 会话，并在只有一只可用鼠标时自动选择。uinput 用 udev `uaccess`，不把用户加入 `input` 组。
+- 原因：用户要把现在的演示收成安装后就能用的 deb，而不是每次自己编译、建目录、查设备和会话号。
+- 否决方案：把日常用户加入 `input` 组；把 socket 挪出 `/run/strokelet/<uid>`。
+- 约束/影响：多只鼠标时要在 `~/.config/strokelet/device` 写明路径。第一次安装扩展后要注销一次。Shell 45 到 49 仍未在对应系统上登录验收。
+- 相关文档：docs/official/requirements/strokelet-demo.md、docs/official/design/strokelet-demo.md

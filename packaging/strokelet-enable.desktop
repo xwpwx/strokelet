@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Strokelet
+Comment=启用鼠标轨迹快捷键
+Exec=/usr/lib/strokelet/enable-extension.sh
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+OnlyShowIn=GNOME;

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Strokelet
+Comment=给鼠标动作配快捷键
+Exec=strokelet settings
+Icon=input-mouse
+Terminal=false
+Categories=Settings;DesktopSettings;
+StartupNotify=true

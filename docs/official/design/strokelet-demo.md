@@ -1,8 +1,8 @@
 ---
 title: Strokelet 首版 Demo 架构
 status: active
-version: 1.1.0
-updated: 2026-09-25
+version: 1.2.0
+updated: 2026-09-26
 owner: 待确认
 topic: strokelet-demo-architecture
 ---
@@ -32,5 +32,7 @@ topic: strokelet-demo-architecture
 - 会话状态、修饰键状态或通信结果未知/超时时不注入 Ctrl+C；注入前再次检查。IPC 客户端不能直接请求 Copy。
 - 启动先做短时限透传验证，退出时释放本进程持有的虚拟按键、关闭设备 FD 并清理自己的 socket；不得擅自释放物理键盘上的按键。
 - 虚拟设备可能改变指针加速。需在目标鼠标上比较接管前后表现，不暗中修改用户全局鼠标设置。
+
+安装包里的用户服务以 root 只执行目录准备：创建 `/run/strokelet/<uid>`，属主 root、组为该用户主组、权限 0770，并拒绝符号链接。服务进程本身仍是目标用户。uinput 用 udev `uaccess` 交给活动会话。`strokelet run --auto` 读取 logind 的图形会话；鼠标优先用 `~/.config/strokelet/device`，否则在唯一可用的相对鼠标或唯一的 `event-mouse` 路径上自动选择。
 
 用户行为和验收见 [首版 Demo 需求](../requirements/strokelet-demo.md)；识别状态和阈值见 [手势识别规格](../specs/gesture-recognition.md)。

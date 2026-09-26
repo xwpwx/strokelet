@@ -12,7 +12,8 @@ mod stroke;
 
 pub use capture::{CaptureUpdate, ChordCapture};
 pub use config::{
-    ConfigError, GestureConfig, MouseButton, TriggerButton, config_path, parse_config, write_config,
+    ConfigError, GestureConfig, MouseButton, TriggerButton, config_path, device_path, parse_config,
+    write_config,
 };
 pub use copy::{
     Chord, CopyOutput, EmitError, KeySink, OutputEvent, chord_device_codes, evdev_from_gtk_keycode,
@@ -21,8 +22,9 @@ pub use copy::{
 pub use copy_gate::{CopyGate, DesktopState, Injection, Modifiers, Observation, SessionState};
 pub use gesture::{Decision, Direction, Gesture, Limits};
 pub use input::{
-    DeviceProfile, DeviceReject, FrameProcessor, classify_device, event_tuple, grab_allowed,
-    key_event, rel_event, syn_dropped, syn_report, virtual_mouse_codes,
+    DeviceProfile, DeviceReject, FrameProcessor, ListedMouse, PickError, classify_device,
+    event_tuple, grab_allowed, key_event, pick_mouse, rel_event, syn_dropped, syn_report,
+    virtual_mouse_codes,
 };
 pub use protocol::{
     CancelReason, ClientUpdate, HEALTH_TIMEOUT_MS, LineCodec, Link, MAX_LINE_BYTES, Outcome,

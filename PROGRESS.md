@@ -293,3 +293,17 @@
 - 未完成事项：T10 仍 active。T09 仍 blocked。本次改动未提交。
 - 图谱：未建立。命令不存在。
 
+### 2026-09-26：打出开箱即用的 deb
+
+- 本次做了什么：`scripts/build-deb.sh` 打出 deb。安装后用户服务准备运行目录、找到 Wayland 会话，并在只有一只可用鼠标时自动接管。多只鼠标时在设置里选择。ydotool 的虚拟设备不作为鼠标。
+- 验证信号：`cargo test --locked --offline` 通过；`cargo clippy --locked --offline --all-targets -- -D warnings` 通过；`node --check settings/app.js` 通过。`dpkg-deb -c` 看到程序、扩展、用户服务和 udev 规则，包内目录是 0755。还没有执行 `apt install`。
+- 未完成事项：T10 仍 active。T09 仍 blocked。本次改动未提交。装上之后要注销一次。本机有三只真实鼠标，安装后要在设置里选一只再保存。
+- 图谱：未建立。命令不存在。
+
+### 2026-09-26：顶栏图标换成一笔上划
+
+- 本次做了什么：面板上的「划」字换成圆点加向上一笔。没连上或暂停时变淡。
+- 验证信号：`node --check extension/strokelet@local/indicator.js` 通过。`scripts/reload-extension.sh` 已重新加载扩展。顶栏外观还没在这次会话里看过。
+- 未完成事项：T10 仍 active。T09 仍 blocked。本次改动未提交。改的是 `indicator.js`，重新加载扩展即可，不用注销。
+- 图谱：未建立。命令不存在。
+

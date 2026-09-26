@@ -1,0 +1,8 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: strokelet
+Source: https://github.com/xwpwx/strokelet
+
+Files: *
+Copyright: 2026 xwpwx
+License: LicenseRef-none
+ The copyright holder has not chosen a public license yet.

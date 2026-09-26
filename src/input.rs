@@ -47,8 +47,56 @@ pub enum DeviceReject {
     NotRelative,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListedMouse {
+    pub path: String,
+    pub name: String,
+    pub aliases: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PickError {
+    Missing,
+    Ambiguous(Vec<String>),
+}
+
+/// 保存的路径优先。多只鼠标时，只有一条稳定的 `event-mouse` 路径才自动选中。
+pub fn pick_mouse(saved: Option<&str>, mice: &[ListedMouse]) -> Result<String, PickError> {
+    let saved = saved.map(str::trim).filter(|value| !value.is_empty());
+    if let Some(saved) = saved
+        && let Some(mouse) = mice.iter().find(|mouse| mouse.matches(saved))
+    {
+        return Ok(mouse.path.clone());
+    }
+    let preferred: Vec<&ListedMouse> = mice
+        .iter()
+        .filter(|mouse| mouse.path.contains("-event-mouse"))
+        .collect();
+    let pool: Vec<&ListedMouse> = if preferred.is_empty() {
+        mice.iter().collect()
+    } else {
+        preferred
+    };
+    match pool.as_slice() {
+        [] => Err(PickError::Missing),
+        [only] => Ok(only.path.clone()),
+        many => {
+            let mut paths: Vec<String> = many.iter().map(|mouse| mouse.path.clone()).collect();
+            paths.sort();
+            Err(PickError::Ambiguous(paths))
+        }
+    }
+}
+
+impl ListedMouse {
+    pub fn matches(&self, saved: &str) -> bool {
+        self.path == saved || self.aliases.iter().any(|alias| alias == saved)
+    }
+}
+
 pub fn classify_device(profile: &DeviceProfile) -> Result<(), DeviceReject> {
-    if profile.name.to_ascii_lowercase().contains("strokelet") {
+    let name = profile.name.to_ascii_lowercase();
+    if name.contains("strokelet") || name.contains("ydotool") || name.contains("virtual") {
         return Err(DeviceReject::Virtual);
     }
     let relative = profile.rel.contains(&RelativeAxisCode::REL_X.0)
@@ -473,4 +521,64 @@ fn is_dropped(event: &InputEvent) -> bool {
 
 pub fn event_tuple(event: &InputEvent) -> (u16, u16, i32) {
     (event.event_type().0, event.code(), event.value())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ListedMouse, PickError, pick_mouse};
+
+    fn mouse(path: &str, aliases: &[&str]) -> ListedMouse {
+        ListedMouse {
+            path: path.to_string(),
+            name: path.to_string(),
+            aliases: aliases.iter().map(|alias| (*alias).to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn saved_alias_wins_over_other_mice() {
+        let mice = vec![
+            mouse("/dev/input/by-id/usb-a-event-mouse", &["/dev/input/event3"]),
+            mouse("/dev/input/by-id/usb-b-event-mouse", &["/dev/input/event5"]),
+        ];
+        let chosen = pick_mouse(Some("/dev/input/event5\n"), &mice).unwrap();
+        assert_eq!(chosen, "/dev/input/by-id/usb-b-event-mouse");
+    }
+
+    #[test]
+    fn one_stable_mouse_is_chosen_when_several_devices_exist() {
+        let mice = vec![
+            mouse("/dev/input/event3", &[]),
+            mouse("/dev/input/by-id/usb-a-event-mouse", &["/dev/input/event8"]),
+        ];
+        let chosen = pick_mouse(None, &mice).unwrap();
+        assert_eq!(chosen, "/dev/input/by-id/usb-a-event-mouse");
+    }
+
+    #[test]
+    fn two_mice_need_an_explicit_choice() {
+        let mice = vec![
+            mouse("/dev/input/by-id/usb-b-event-mouse", &[]),
+            mouse("/dev/input/by-id/usb-a-event-mouse", &[]),
+        ];
+        assert_eq!(
+            pick_mouse(None, &mice).unwrap_err(),
+            PickError::Ambiguous(vec![
+                "/dev/input/by-id/usb-a-event-mouse".to_string(),
+                "/dev/input/by-id/usb-b-event-mouse".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn missing_saved_path_falls_back_to_the_only_mouse() {
+        let mice = vec![mouse("/dev/input/event3", &[])];
+        let chosen = pick_mouse(Some("/dev/input/event9"), &mice).unwrap();
+        assert_eq!(chosen, "/dev/input/event3");
+    }
+
+    #[test]
+    fn no_mouse_is_missing() {
+        assert_eq!(pick_mouse(None, &[]).unwrap_err(), PickError::Missing);
+    }
 }

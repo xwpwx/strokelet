@@ -1,0 +1,35 @@
+#!/bin/sh
+set -eu
+
+stop_user() {
+    dir=$1
+    uid=${dir#/run/user/}
+    case "$uid" in
+        *[!0-9]*) return 0 ;;
+    esac
+    user=$(id -nu "$uid" 2>/dev/null || true)
+    [ -n "$user" ] || return 0
+    [ -S "$dir/bus" ] || return 0
+    if [ "$2" = "remove" ]; then
+        runuser -u "$user" -- env \
+            XDG_RUNTIME_DIR="$dir" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=$dir/bus" \
+            gnome-extensions disable strokelet@local >/dev/null 2>&1 || true
+        runuser -u "$user" -- env \
+            XDG_RUNTIME_DIR="$dir" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=$dir/bus" \
+            systemctl --user disable --now strokelet.service >/dev/null 2>&1 || true
+    else
+        runuser -u "$user" -- env \
+            XDG_RUNTIME_DIR="$dir" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=$dir/bus" \
+            systemctl --user stop strokelet.service >/dev/null 2>&1 || true
+    fi
+}
+
+if [ "$1" = "remove" ] || [ "$1" = "upgrade" ]; then
+    for dir in /run/user/*; do
+        [ -d "$dir" ] || continue
+        stop_user "$dir" "$1"
+    done
+fi

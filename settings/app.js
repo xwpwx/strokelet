@@ -50,6 +50,24 @@ app.connect('activate', () => {
     toolbar.add_top_bar(dirtyBanner);
 
     const page = new Adw.PreferencesPage();
+    const mice = listMice();
+    const savedMouse = readDevice();
+    const mouseGroup = new Adw.PreferencesGroup({
+        title: '鼠标',
+        description: mice.length > 1
+            ? '这台电脑有多只鼠标。保存后使用下面这一只。'
+            : '保存后使用这只鼠标。',
+    });
+    const mouseRow = new Adw.ComboRow({
+        title: '使用这只',
+        model: modelOf(mice.length === 0 ? ['没有找到鼠标'] : mice.map(mouse => mouse.name)),
+        sensitive: mice.length > 0,
+    });
+    const savedIndex = mice.findIndex(mouse => mouse.path === savedMouse);
+    mouseRow.selected = savedIndex >= 0 ? savedIndex : 0;
+    mouseGroup.add(mouseRow);
+    page.add(mouseGroup);
+    const selectedMouse = () => mice[mouseRow.selected]?.path || '';
     const triggerGroup = new Adw.PreferencesGroup({
         title: '轨迹',
         description: '画轨迹时按住这个键。鼠标组合不看它，以你先按下的那个键为准。',
@@ -69,6 +87,7 @@ app.connect('activate', () => {
         version: 1,
         trigger: triggerName(),
         rules,
+        mouse: selectedMouse(),
     });
     let baseline = '';
     const updateDirty = () => {
@@ -140,6 +159,7 @@ app.connect('activate', () => {
             refresh();
         }, true);
     });
+    mouseRow.connect('notify::selected', () => updateDirty());
     trigger.connect('notify::selected', () => {
         if (triggerName() === shownTrigger)
             return;
@@ -160,11 +180,19 @@ app.connect('activate', () => {
             return;
         }
         GLib.file_set_contents(configFile(), text);
+        const mouse = selectedMouse();
+        if (mouse)
+            writeDevice(mouse);
         baseline = snapshot();
         updateDirty();
-        const reloaded = sendReload();
+        const restarted = mouse ? restartService() : false;
+        const reloaded = restarted ? false : sendReload();
         toastOverlay.add_toast(new Adw.Toast({
-            title: reloaded ? '已保存，正在运行的演示已换上新规则' : '已保存。下次启动演示时会用这份规则',
+            title: restarted
+                ? '已保存，已换上这只鼠标'
+                : reloaded
+                    ? '已保存，正在运行的演示已换上新规则'
+                    : '已保存。下次启动时会用这份规则',
         }));
     };
     dirtyBanner.connect('button-clicked', () => writeConfig());
@@ -220,6 +248,60 @@ function confirmDelete(parent, title, done) {
             done();
     });
     dialog.present(parent);
+}
+
+function listMice() {
+    const bin = GLib.getenv('STROKELET_BIN') || 'strokelet';
+    try {
+        const proc = Gio.Subprocess.new(
+            [bin, 'list-devices'],
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE,
+        );
+        const [, stdout] = proc.communicate_utf8(null, null);
+        return (stdout || '').split('\n').flatMap(line => {
+            if (!line.startsWith('accepted\t'))
+                return [];
+            const parts = line.split('\t');
+            const path = parts[1] || '';
+            const name = (parts[2] || '').replace(/^name=/, '') || path;
+            return path ? [{path, name}] : [];
+        });
+    } catch {
+        return [];
+    }
+}
+
+function deviceFile() {
+    return GLib.build_filenamev([GLib.get_user_config_dir(), 'strokelet', 'device']);
+}
+
+function readDevice() {
+    try {
+        const [ok, bytes] = GLib.file_get_contents(deviceFile());
+        if (!ok)
+            return '';
+        return new TextDecoder().decode(bytes).split('\n')[0].trim();
+    } catch {
+        return '';
+    }
+}
+
+function writeDevice(path) {
+    const dir = GLib.build_filenamev([GLib.get_user_config_dir(), 'strokelet']);
+    GLib.mkdir_with_parents(dir, 0o755);
+    GLib.file_set_contents(deviceFile(), `${path}\n`);
+}
+
+function restartService() {
+    try {
+        const proc = Gio.Subprocess.new(
+            ['systemctl', '--user', 'restart', 'strokelet.service'],
+            Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE,
+        );
+        return proc.wait_check(null);
+    } catch {
+        return false;
+    }
 }
 
 function configFile() {

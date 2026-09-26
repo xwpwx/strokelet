@@ -1,8 +1,8 @@
 ---
 title: Strokelet 首版 Demo 需求
 status: active
-version: 1.0.0
-updated: 2026-09-25
+version: 1.1.0
+updated: 2026-09-26
 owner: 待确认
 topic: strokelet-demo-requirements
 ---
@@ -23,7 +23,11 @@ topic: strokelet-demo-requirements
 
 ## 首版不包含
 
-触控板、绝对坐标设备、多鼠标并发、自由形状识别、手势录制、按应用规则、终端 Ctrl+Shift+C、完整设置 GUI、任意命令执行、开机自启、常驻 systemd 服务和 deb 打包均不在首版范围。
+触控板、绝对坐标设备、多鼠标并发、自由形状识别、手势录制、按应用规则、终端 Ctrl+Shift+C、完整设置 GUI 和任意命令执行均不在首版范围。
+
+## 安装包
+
+`scripts/build-deb.sh` 打出的 deb 安装程序、GNOME 扩展和用户服务。安装后注销一次再登录。服务为当前用户准备 `/run/strokelet/<uid>`，用 logind 找到 Wayland 图形会话，并在只有一只可用鼠标时自动使用它。多只鼠标时，在设置里选择，或把路径写到 `~/.config/strokelet/device`。uinput 通过 udev 的 `uaccess` 交给当前会话，不把用户加入 `input` 组。
 
 ## 验收
 

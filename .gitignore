@@ -3,6 +3,7 @@ graphify-out/
 
 # Rust
 /target/
+/dist/
 
 # OS / editor
 .DS_Store

@@ -287,6 +287,13 @@ fn device_filter_and_grab_policy() {
     );
     assert_eq!(
         classify_device(&DeviceProfile {
+            name: "ydotoold virtual device".into(),
+            ..mouse.clone()
+        }),
+        Err(DeviceReject::Virtual)
+    );
+    assert_eq!(
+        classify_device(&DeviceProfile {
             name: "touch".into(),
             rel: vec![],
             keys: vec![],

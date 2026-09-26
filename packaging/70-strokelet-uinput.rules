@@ -1,0 +1,2 @@
+# Give the active session access to uinput without adding the user to the input group.
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", MODE="0660"

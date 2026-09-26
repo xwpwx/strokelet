@@ -202,6 +202,10 @@ impl GestureConfig {
     }
 }
 
+pub fn device_path() -> PathBuf {
+    config_path().with_file_name("device")
+}
+
 pub fn config_path() -> PathBuf {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)

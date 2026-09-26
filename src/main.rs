@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::os::fd::AsRawFd;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -18,10 +19,11 @@ use evdev::{
 use strokelet::{
     CancelReason, CaptureUpdate, ChordCapture, CopyOutput, Decision, DeviceProfile, EmitError,
     FrameProcessor, GestureConfig, Injection, InjectionLedger, KeySink, Limits, LineCodec, Link,
-    MouseButton, Observation, Outcome, OutputEvent, PollAction, SessionFacts, TriggerButton,
-    chord_device_codes, classify_device, config_path, current_uid, facts_from_paths, grab_allowed,
-    is_active_unlocked, key_event, parse_config, peer_is_target, status_message, syn_report,
-    validate_runtime_path, virtual_mouse_codes,
+    ListedMouse, MouseButton, Observation, Outcome, OutputEvent, PickError, PollAction,
+    SessionFacts, TriggerButton, chord_device_codes, classify_device, config_path, current_uid,
+    device_path, facts_from_paths, grab_allowed, is_active_unlocked, key_event, parse_config,
+    peer_is_target, pick_mouse, status_message, syn_report, validate_runtime_path,
+    virtual_mouse_codes,
 };
 
 static STOP: AtomicBool = AtomicBool::new(false);
@@ -77,7 +79,7 @@ fn dispatch(args: Vec<String>) -> Result<(), String> {
 }
 
 fn open_settings() -> Result<(), String> {
-    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("settings/app.js");
+    let script = settings_script()?;
     let executable = env::current_exe().map_err(|err| format!("cannot find strokelet: {err}"))?;
     let status = std::process::Command::new("gjs")
         .arg("-m")
@@ -653,45 +655,38 @@ Commands:
   capture-stroke [right|middle|forward|back]
   capture-button
   check-gestures
+  run --auto
   run --device PATH --uid UID --session ID [--timeout-seconds 120]
       [--passthrough-only] [--inject-copy]
 
+--auto finds the Wayland session and the mouse, injects shortcuts, and
+runs until stopped. --timeout-seconds 0 also runs until stopped.
 Grabbing waits until the extension is ready, the session is active and
-unlocked, and no keys are held. The default timeout is 120 seconds.
-This is a foreground demo, not a system service.
+unlocked, and no keys are held. The default timeout without --auto is
+120 seconds.
 capture-chord exclusively grabs keyboards until one shortcut is recorded.
 The settings window starts it; Ctrl+C there cannot reach the shell until it exits."
     );
 }
 
 fn list_devices() -> Result<(), String> {
-    let mut found = false;
-    for (path, device) in evdev::enumerate() {
-        found = true;
-        let name = device.name().unwrap_or("").to_string();
-        let rel = axis_codes(device.supported_relative_axes());
-        let abs = abs_codes(device.supported_absolute_axes());
-        let keys = device
-            .supported_keys()
-            .map(|set| set.iter().map(|code| code.0).collect())
-            .unwrap_or_default();
-        let profile = DeviceProfile {
-            name: name.clone(),
-            rel: rel.clone(),
-            keys,
-            abs: abs.clone(),
-        };
-        let verdict = match classify_device(&profile) {
-            Ok(()) => "accepted".to_string(),
-            Err(reason) => format!("rejected {reason:?}"),
-        };
-        println!(
-            "{verdict}\t{}\tname={name}\trel={rel:?}\tabs={abs:?}",
-            path.display()
-        );
+    let mut mice = accepted_mice();
+    mice.sort_by(|left, right| left.path.cmp(&right.path));
+    if mice.is_empty() {
+        eprintln!("strokelet: no relative mouse could be opened; check /dev/input permissions");
     }
-    if !found {
-        eprintln!("strokelet: no input devices could be opened; check /dev/input permissions");
+    for mouse in &mice {
+        println!("accepted\t{}\tname={}", mouse.path, mouse.name);
+    }
+    for (path, device) in evdev::enumerate() {
+        let profile = profile_of(&device);
+        if let Err(reason) = classify_device(&profile) {
+            println!(
+                "rejected {reason:?}\t{}\tname={}",
+                path.display(),
+                profile.name
+            );
+        }
     }
     Ok(())
 }
@@ -710,7 +705,7 @@ struct RunOpts {
     device: PathBuf,
     uid: u32,
     session: String,
-    timeout: Duration,
+    timeout: Option<Duration>,
     passthrough_only: bool,
     inject_copy: bool,
 }
@@ -774,10 +769,13 @@ fn run_bound(opts: &RunOpts, listener: UnixListener) -> Result<(), String> {
     } else if !opts.inject_copy {
         eprintln!("strokelet: copy injection is off; pass --inject-copy to arm Ctrl+C");
     }
-    eprintln!(
-        "strokelet: listening for the extension; timeout {}s",
-        opts.timeout.as_secs()
-    );
+    match opts.timeout {
+        Some(limit) => eprintln!(
+            "strokelet: listening for the extension; timeout {}s",
+            limit.as_secs()
+        ),
+        None => eprintln!("strokelet: listening for the extension until stopped"),
+    }
     let drive_result = drive(
         opts,
         listener,
@@ -814,7 +812,7 @@ fn drive(
     let mut grabbed = false;
     let mut sample: Option<SampleWait> = None;
     let started = Instant::now();
-    while started.elapsed() < opts.timeout {
+    while opts.timeout.is_none_or(|limit| started.elapsed() < limit) {
         if STOP.load(Ordering::Relaxed) {
             eprintln!("strokelet: stopping");
             break;
@@ -1346,12 +1344,15 @@ fn parse_run(args: &[String]) -> Result<RunOpts, String> {
     let mut device = None;
     let mut uid = None;
     let mut session = None;
-    let mut timeout = 120u64;
+    let mut timeout = Some(120u64);
+    let mut timeout_set = false;
     let mut passthrough_only = false;
     let mut inject_copy = false;
+    let mut auto = false;
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         match arg.as_str() {
+            "--auto" => auto = true,
             "--device" => {
                 device = Some(PathBuf::from(next_value(&mut iter, "--device")?));
             }
@@ -1364,9 +1365,12 @@ fn parse_run(args: &[String]) -> Result<RunOpts, String> {
             }
             "--session" => session = Some(next_value(&mut iter, "--session")?),
             "--timeout-seconds" => {
-                timeout = next_value(&mut iter, "--timeout-seconds")?
-                    .parse()
-                    .map_err(|_| "timeout must be a number".to_string())?;
+                timeout_set = true;
+                timeout = Some(
+                    next_value(&mut iter, "--timeout-seconds")?
+                        .parse()
+                        .map_err(|_| "timeout must be a number".to_string())?,
+                );
             }
             "--passthrough-only" => passthrough_only = true,
             "--inject-copy" => inject_copy = true,
@@ -1375,15 +1379,196 @@ fn parse_run(args: &[String]) -> Result<RunOpts, String> {
     }
     if passthrough_only {
         inject_copy = false;
+    } else if auto {
+        inject_copy = true;
     }
+    let uid = if let Some(uid) = uid {
+        uid
+    } else if auto {
+        current_uid()
+    } else {
+        return Err("run requires --uid".into());
+    };
+    if auto && session.is_none() {
+        session = Some(display_session(uid)?);
+    }
+    if auto {
+        let kind = session_type(session.as_deref().unwrap_or_default())?;
+        if kind != "wayland" {
+            return Err(format!("图形会话不是 Wayland（{kind}）"));
+        }
+    }
+    if auto && device.is_none() {
+        device = Some(resolve_mouse()?);
+    }
+    let timeout = if auto && !timeout_set {
+        None
+    } else {
+        match timeout {
+            Some(0) | None => None,
+            Some(seconds) => Some(Duration::from_secs(seconds)),
+        }
+    };
     Ok(RunOpts {
         device: device.ok_or("run requires --device")?,
-        uid: uid.ok_or("run requires --uid")?,
+        uid,
         session: session.ok_or("run requires --session")?,
-        timeout: Duration::from_secs(timeout),
+        timeout,
         passthrough_only,
         inject_copy,
     })
+}
+
+fn settings_script() -> Result<PathBuf, String> {
+    if let Some(path) = env::var_os("STROKELET_SETTINGS") {
+        let path = PathBuf::from(path);
+        if path.is_file() {
+            return Ok(path);
+        }
+        return Err(format!("设置窗口不在 {}", path.display()));
+    }
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("settings/app.js");
+    let installed = PathBuf::from("/usr/share/strokelet/settings/app.js");
+    let from_source_tree = env::current_exe()
+        .ok()
+        .is_some_and(|path| path.components().any(|part| part.as_os_str() == "target"));
+    if from_source_tree && source.is_file() {
+        return Ok(source);
+    }
+    if installed.is_file() {
+        return Ok(installed);
+    }
+    if source.is_file() {
+        return Ok(source);
+    }
+    Err("找不到设置窗口".into())
+}
+
+fn display_session(uid: u32) -> Result<String, String> {
+    let text = loginctl_value(&["show-user", &uid.to_string(), "-p", "Display", "--value"])?;
+    if text.is_empty() {
+        return Err("当前用户没有图形会话".into());
+    }
+    Ok(text)
+}
+
+fn session_type(session: &str) -> Result<String, String> {
+    let text = loginctl_value(&["show-session", session, "-p", "Type", "--value"])?;
+    if text.is_empty() {
+        return Err(format!("读不到会话 {session} 的类型"));
+    }
+    Ok(text)
+}
+
+fn loginctl_value(args: &[&str]) -> Result<String, String> {
+    let output = std::process::Command::new("loginctl")
+        .args(args)
+        .output()
+        .map_err(|err| format!("loginctl: {err}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn resolve_mouse() -> Result<PathBuf, String> {
+    let mice = accepted_mice();
+    let saved = saved_device();
+    if let Some(saved) = saved.as_deref() {
+        let known = mice.iter().any(|mouse| mouse.matches(saved));
+        if !known {
+            eprintln!("strokelet: 保存的鼠标现在不可用，改为自动选择：{saved}");
+        }
+    }
+    match pick_mouse(saved.as_deref(), &mice) {
+        Ok(path) => {
+            eprintln!("strokelet: using mouse {path}");
+            Ok(PathBuf::from(path))
+        }
+        Err(PickError::Missing) => Err(
+            "没有找到可用的鼠标。接上鼠标后再试，或把设备路径写入 ~/.config/strokelet/device"
+                .into(),
+        ),
+        Err(PickError::Ambiguous(paths)) => {
+            let lines = paths
+                .iter()
+                .map(|path| {
+                    let name = mice
+                        .iter()
+                        .find(|mouse| mouse.path == *path)
+                        .map(|mouse| mouse.name.as_str())
+                        .unwrap_or("");
+                    format!("{path}\t{name}")
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            Err(format!(
+                "找到多只鼠标，把要使用的路径写入 {}：\n{lines}",
+                device_path().display()
+            ))
+        }
+    }
+}
+
+fn saved_device() -> Option<String> {
+    let text = fs::read_to_string(device_path()).ok()?;
+    let line = text.lines().next()?.trim();
+    if line.is_empty() {
+        None
+    } else {
+        Some(line.to_string())
+    }
+}
+
+fn accepted_mice() -> Vec<ListedMouse> {
+    let mut by_device = HashMap::<u64, ListedMouse>::new();
+    for (path, device) in evdev::enumerate() {
+        let profile = profile_of(&device);
+        if classify_device(&profile).is_err() {
+            continue;
+        }
+        let Some(rdev) = fs::metadata(&path).ok().map(|meta| meta.rdev()) else {
+            continue;
+        };
+        let preferred = preferred_path(&path);
+        let mouse = ListedMouse {
+            path: preferred.display().to_string(),
+            name: profile.name,
+            aliases: vec![path.display().to_string(), preferred.display().to_string()],
+        };
+        match by_device.get(&rdev) {
+            Some(existing) if existing.path.contains("-event-mouse") => {}
+            _ => {
+                by_device.insert(rdev, mouse);
+            }
+        }
+    }
+    by_device.into_values().collect()
+}
+
+fn preferred_path(event: &Path) -> PathBuf {
+    let Ok(canon) = fs::canonicalize(event) else {
+        return event.to_path_buf();
+    };
+    let mut found = Vec::new();
+    if let Ok(entries) = fs::read_dir("/dev/input/by-id") {
+        for entry in entries.flatten() {
+            let link = entry.path();
+            if fs::canonicalize(&link).ok().as_ref() == Some(&canon) {
+                found.push(link);
+            }
+        }
+    }
+    if let Some(path) = found
+        .iter()
+        .find(|path| path.to_string_lossy().contains("-event-mouse"))
+    {
+        return path.clone();
+    }
+    found
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| event.to_path_buf())
 }
 
 fn next_value(iter: &mut std::slice::Iter<String>, flag: &str) -> Result<String, String> {
