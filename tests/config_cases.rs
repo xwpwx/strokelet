@@ -68,14 +68,16 @@ fn screen_name_is_optional_and_trimmed() {
             .screen_name,
         ""
     );
-    assert!(parse_config(
-        r#"{
+    assert!(
+        parse_config(
+            r#"{
         "version": 1,
         "trigger": "right",
         "rules": [{"direction": "up", "modifiers": ["ctrl"], "key": "c", "name": "复制\n"}]
     }"#
-    )
-    .is_err());
+        )
+        .is_err()
+    );
     assert!(parse_config(
         r#"{
         "version": 1,
@@ -196,6 +198,100 @@ fn legacy_names_and_recorded_codes_both_load() {
         .unwrap();
     assert_eq!(space.modifier_codes(), &[KeyCode::KEY_RIGHTCTRL.0]);
     assert_eq!(space.key_code(), KeyCode::KEY_SPACE.0);
+}
+
+#[test]
+fn button_chord_is_separate_from_the_stroke() {
+    let config = parse_config(
+        r#"{
+        "version": 1,
+        "trigger": "right",
+        "rules": [
+            {"direction": "up", "modifiers": ["ctrl"], "key": "c"},
+            {"button": "left", "modifiers": ["ctrl"], "key": "v", "name": "粘贴"}
+        ]
+    }"#,
+    )
+    .unwrap();
+    assert_eq!(
+        config
+            .chord_for_points(&straight_points(Direction::Up))
+            .unwrap()
+            .key_name(),
+        "c"
+    );
+    let chord = config
+        .rule_for_button(KeyCode::BTN_RIGHT.0, KeyCode::BTN_LEFT.0)
+        .unwrap();
+    assert_eq!(chord.chord.key_name(), "v");
+    assert_eq!(chord.screen_name, "粘贴");
+    assert!(
+        config
+            .rule_for_button(KeyCode::BTN_LEFT.0, KeyCode::BTN_RIGHT.0)
+            .is_none()
+    );
+    assert!(
+        parse_config(
+            r#"{
+        "version": 1,
+        "trigger": "right",
+        "rules": [{"button": "left", "direction": "up", "modifiers": ["ctrl"], "key": "c"}]
+    }"#
+        )
+        .is_err()
+    );
+    assert!(
+        parse_config(
+            r#"{
+        "version": 1,
+        "trigger": "middle",
+        "rules": [{"button": "middle", "modifiers": ["ctrl"], "key": "c"}]
+    }"#
+        )
+        .is_err()
+    );
+    assert!(
+        parse_config(
+            r#"{
+        "version": 1,
+        "trigger": "right",
+        "rules": [
+            {"button": "left", "modifiers": ["ctrl"], "key": "c"},
+            {"button": "left", "modifiers": ["ctrl"], "key": "v"}
+        ]
+    }"#
+        )
+        .is_err()
+    );
+    let swapped = parse_config(
+        r#"{
+        "version": 1,
+        "trigger": "right",
+        "rules": [
+            {"hold": "left", "button": "right", "modifiers": ["ctrl"], "key": "c"},
+            {"hold": "right", "button": "left", "modifiers": ["ctrl"], "key": "v"}
+        ]
+    }"#,
+    )
+    .unwrap();
+    assert_eq!(
+        swapped
+            .rule_for_button(KeyCode::BTN_LEFT.0, KeyCode::BTN_RIGHT.0)
+            .unwrap()
+            .chord
+            .key_name(),
+        "c"
+    );
+    assert!(
+        parse_config(
+            r#"{
+        "version": 1,
+        "trigger": "right",
+        "rules": [{"hold": "left", "button": "left", "modifiers": ["ctrl"], "key": "c"}]
+    }"#
+        )
+        .is_err()
+    );
 }
 
 #[test]

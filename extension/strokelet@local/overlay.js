@@ -3,6 +3,8 @@ import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
+import {preferredSize, readPointer} from './shell.js';
+
 const SAMPLE_MS = 16;
 const MAX_POINTS = 512;
 const SHOW_AFTER_PX = 12;
@@ -52,18 +54,10 @@ export class GestureOverlay {
         this._hideName();
         this._name.text = text;
         this._name.show();
-        const [pointerX, pointerY] = global.get_pointer();
-        let width = [...text].length * 32 + 28;
-        let height = 52;
-        try {
-            const [minWidth] = this._name.get_preferred_width(-1);
-            const [minHeight] = this._name.get_preferred_height(minWidth);
-            if (minWidth > 0)
-                width = minWidth;
-            if (minHeight > 0)
-                height = minHeight;
-        } catch {
-        }
+        const {x: pointerX, y: pointerY} = readPointer();
+        const fallbackWidth = [...text].length * 32 + 28;
+        const fallbackHeight = 52;
+        const {width, height} = preferredSize(this._name, fallbackWidth, fallbackHeight);
         const margin = 12;
         let x = pointerX + 18;
         let y = pointerY - height - 16;
@@ -161,7 +155,7 @@ export class GestureOverlay {
     }
 
     _sample() {
-        const [stageX, stageY] = global.get_pointer();
+        const {x: stageX, y: stageY} = readPointer();
         const [ok, x, y] = this._area.transform_stage_point(stageX, stageY);
         if (!ok)
             return;

@@ -5,8 +5,17 @@ import GLib from 'gi://GLib';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
+import {readPointer, SHELL_MAJOR_MAX, SHELL_MAJOR_MIN, shellSupported, shellVersion} from './shell.js';
+
 export default class StrokeletExtension extends Extension {
     enable() {
+        if (!shellSupported()) {
+            logError(new Error(
+                `strokelet: GNOME Shell ${shellVersion()} is outside ${SHELL_MAJOR_MIN}–${SHELL_MAJOR_MAX}`,
+            ));
+            return;
+        }
+        log(`strokelet: enabling on GNOME Shell ${shellVersion()}`);
         this._closed = false;
         this._generation = (this._generation ?? 0) + 1;
         const generation = this._generation;
@@ -15,11 +24,7 @@ export default class StrokeletExtension extends Extension {
 
     async _load(generation) {
         const stamp = Date.now();
-        const [{GestureOverlay}, {StrokeletIndicator}, {DemoTransport}] = await Promise.all([
-            import(`./overlay.js?stamp=${stamp}`),
-            import(`./indicator.js?stamp=${stamp}`),
-            import(`./transport.js?stamp=${stamp}`),
-        ]);
+        const [{GestureOverlay}, {StrokeletIndicator}, {DemoTransport}] = await loadParts(stamp);
         if (this._closed || this._generation !== generation)
             return;
         this._overlay = new GestureOverlay();
@@ -94,7 +99,7 @@ export default class StrokeletExtension extends Extension {
     }
 
     _heldModifiers() {
-        const [,, mods] = global.get_pointer();
+        const {mods} = readPointer();
         const names = [];
         if (mods & Clutter.ModifierType.CONTROL_MASK)
             names.push('Control');
@@ -105,5 +110,22 @@ export default class StrokeletExtension extends Extension {
         if (mods & Clutter.ModifierType.SUPER_MASK)
             names.push('Super');
         return names;
+    }
+}
+
+async function loadParts(stamp) {
+    try {
+        return await Promise.all([
+            import(`./overlay.js?stamp=${stamp}`),
+            import(`./indicator.js?stamp=${stamp}`),
+            import(`./transport.js?stamp=${stamp}`),
+        ]);
+    } catch (error) {
+        log(`strokelet: versioned import failed (${error}); loading extension files directly`);
+        return await Promise.all([
+            import('./overlay.js'),
+            import('./indicator.js'),
+            import('./transport.js'),
+        ]);
     }
 }

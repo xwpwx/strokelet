@@ -299,3 +299,179 @@ fn device_filter_and_grab_policy() {
     assert!(!grab_allowed(true, true, true));
     assert!(grab_allowed(true, true, false));
 }
+
+#[test]
+fn held_trigger_plus_configured_button_is_swallowed() {
+    let mut proc = processor();
+    proc.set_button_chords(&[(KeyCode::BTN_RIGHT.0, KeyCode::BTN_LEFT.0)]);
+    feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_RIGHT, 1), syn_report()],
+        0,
+    );
+    let moved = feed(
+        &mut proc,
+        &[rel_event(RelativeAxisCode::REL_Y, -40), syn_report()],
+        20,
+    );
+    assert_eq!(
+        moved,
+        vec![view_rel(RelativeAxisCode::REL_Y, -40), view_syn()]
+    );
+    let press = feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_LEFT, 1), syn_report()],
+        40,
+    );
+    assert!(press.is_empty());
+    assert_eq!(
+        proc.last_decision(),
+        Some(Decision::Button {
+            hold: KeyCode::BTN_RIGHT.0,
+            press: KeyCode::BTN_LEFT.0,
+        })
+    );
+    let release_left = feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_LEFT, 0), syn_report()],
+        50,
+    );
+    assert!(release_left.is_empty());
+    let release_right = feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_RIGHT, 0), syn_report()],
+        60,
+    );
+    assert!(release_right.is_empty());
+    assert_eq!(proc.last_decision(), None);
+}
+
+#[test]
+fn unconfigured_left_button_is_forwarded_and_cancels() {
+    let mut proc = processor();
+    feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_RIGHT, 1), syn_report()],
+        0,
+    );
+    let press = feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_LEFT, 1), syn_report()],
+        20,
+    );
+    assert_eq!(press, vec![view_key(KeyCode::BTN_LEFT, 1), view_syn()]);
+    feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_RIGHT, 0), syn_report()],
+        30,
+    );
+    assert_eq!(proc.last_decision(), Some(Decision::Cancel));
+}
+
+#[test]
+fn left_before_right_is_not_a_button_chord() {
+    let mut proc = processor();
+    proc.set_button_chords(&[(KeyCode::BTN_RIGHT.0, KeyCode::BTN_LEFT.0)]);
+    let first = feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_LEFT, 1), syn_report()],
+        0,
+    );
+    assert_eq!(first, vec![view_key(KeyCode::BTN_LEFT, 1), view_syn()]);
+    assert_eq!(proc.last_decision(), None);
+}
+
+#[test]
+fn hold_left_then_right_is_swallowed() {
+    let mut proc = processor();
+    proc.set_button_chords(&[(KeyCode::BTN_LEFT.0, KeyCode::BTN_RIGHT.0)]);
+    let first = feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_LEFT, 1), syn_report()],
+        0,
+    );
+    assert!(first.is_empty());
+    let second = feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_RIGHT, 1), syn_report()],
+        20,
+    );
+    assert!(second.is_empty());
+    assert_eq!(
+        proc.last_decision(),
+        Some(Decision::Button {
+            hold: KeyCode::BTN_LEFT.0,
+            press: KeyCode::BTN_RIGHT.0,
+        })
+    );
+    let release_right = feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_RIGHT, 0), syn_report()],
+        30,
+    );
+    assert!(release_right.is_empty());
+    let release_left = feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_LEFT, 0), syn_report()],
+        40,
+    );
+    assert!(release_left.is_empty());
+    assert_eq!(proc.last_decision(), None);
+}
+
+#[test]
+fn hold_left_without_a_second_button_replays_the_click() {
+    let mut proc = processor();
+    proc.set_button_chords(&[(KeyCode::BTN_LEFT.0, KeyCode::BTN_RIGHT.0)]);
+    feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_LEFT, 1), syn_report()],
+        0,
+    );
+    let release = feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_LEFT, 0), syn_report()],
+        20,
+    );
+    assert_eq!(
+        release,
+        vec![
+            view_key(KeyCode::BTN_LEFT, 1),
+            view_syn(),
+            view_key(KeyCode::BTN_LEFT, 0),
+            view_syn(),
+        ]
+    );
+    assert_eq!(proc.last_decision(), None);
+}
+
+#[test]
+fn hold_left_drag_past_slop_presses_the_button() {
+    let mut proc = processor();
+    proc.set_button_chords(&[(KeyCode::BTN_LEFT.0, KeyCode::BTN_RIGHT.0)]);
+    feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_LEFT, 1), syn_report()],
+        0,
+    );
+    let moved = feed(
+        &mut proc,
+        &[rel_event(RelativeAxisCode::REL_X, 40), syn_report()],
+        20,
+    );
+    assert_eq!(
+        moved,
+        vec![
+            view_key(KeyCode::BTN_LEFT, 1),
+            view_syn(),
+            view_rel(RelativeAxisCode::REL_X, 40),
+            view_syn(),
+        ]
+    );
+    let release = feed(
+        &mut proc,
+        &[key_event(KeyCode::BTN_LEFT, 0), syn_report()],
+        40,
+    );
+    assert_eq!(release, vec![view_key(KeyCode::BTN_LEFT, 0), view_syn()]);
+}

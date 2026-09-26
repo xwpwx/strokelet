@@ -69,7 +69,7 @@
 ## 下一步
 
 1. 新会话先读 AGENTS.md、docs/index.md、INIT_CONTRACT.md、TASKS.md、本文件与 DECISIONS.md。
-2. 让用户打开 `./target/debug/strokelet settings`，保存一条规则，并确认正在运行的演示打出 `reloaded gesture rules`。不要把 T10 标成 passing，除非这一步真的发生。
+2. 用户先停掉旧的演示和设置窗口，再用新的 `target/debug/strokelet` 重新启动。在设置里录一条「先按左键再按右键」的组合并保存，确认演示打出 `reloaded gesture rules`。不要把 T10 标成 passing，除非这一步真的发生。
 3. 不要把 T09 标成 passing。请用户按 `docs/acceptance/demo-checklist.md` 在 Wayland 桌面做一次上划和粘贴。
 
 
@@ -100,6 +100,7 @@
 | 2026-09-25 | `make check`                                                                     | 通过    | 67 个测试：配置 6、门禁 6、手势 31、输入 9、协议 14、启动 1                         |
 | 2026-09-25 | `gjs -m settings/app.js`（无显示器）                                                   | 按预期停住 | Gtk 报 Failed to open display；脚本已加载。窗口点击未做                      |
 | 2026-09-25 | `cargo test --offline --locked --all-targets` 与 clippy `-D warnings`          | 通过    | 72 个测试。快捷键录制的窗口点击未做                                          |
+| 2026-09-26 | `cargo test --locked --offline` 与 `cargo clippy --locked --offline --all-targets -- -D warnings` | 通过    | 组合起始键改为先按下的鼠标键。调试二进制已重新编译。桌面上还没按过先左后右。 |
 
 
 
@@ -249,6 +250,46 @@
 
 - 本次做了什么：规则可以填写屏幕名称。快捷键发出后，扩展在指针旁显示这个名字；留空则不显示。
 - 验证信号：见最近验证结果。屏幕上的文字还没在桌面看过。改了 `extension.js`，需要注销一次。
+- 未完成事项：T10 仍 active。T09 仍 blocked。本次改动未提交。
+- 图谱：未建立。命令不存在。
+
+### 2026-09-26：鼠标组合键计划
+
+- 本次做了什么：写下非生效草稿 `docs/drafts/2026-09-26-strokelet-button-chord-plan.md`。按住触发键再按另一个鼠标键可以单独对应一条快捷键。没有改代码。
+- 未完成事项：计划尚未确认。T09 仍 blocked。T10 仍 active。
+- 图谱：只新增一份草稿索引，图谱未受影响。
+
+### 2026-09-26：鼠标组合键
+
+- 本次做了什么：用户确认后，按住触发键再按另一个已配置的鼠标键会立刻注入快捷键，并吞掉该键。没配置的键仍交回应用程序。设置窗口可以录这个组合。
+- 验证信号：见最近验证结果。桌面上还没按过这个组合。
+- 未完成事项：T10 仍 active。T09 仍 blocked。本次改动未提交。
+- 图谱：未建立。命令不存在。
+
+### 2026-09-26：组合的起始键可以是先按下的任意鼠标键
+
+- 本次做了什么：鼠标组合记下起始键和第二个键。左键、右键、中键和两个侧键都可以先按。轨迹触发键的下拉菜单也加上了左键，并改成中文。
+- 验证信号：`cargo test --locked --offline` 通过；`cargo clippy --locked --offline --all-targets -- -D warnings` 通过。调试二进制已重新编译。桌面上还没按过「先左后右」。
+- 未完成事项：T10 仍 active。T09 仍 blocked。本次改动未提交。需要停掉正在运行的演示和设置窗口，再用新二进制重新打开。
+- 图谱：未建立。命令不存在。
+
+### 2026-09-26：设置窗口更好认、更好点
+
+- 本次做了什么：设置窗口改成规则列表。点一条进入编辑：先在「画出轨迹」和「鼠标组合」里选一种，再录快捷键和屏幕名字。没点完成不会改原来的规则。没保存就关窗口会提醒。
+- 验证信号：`gjs -m settings/app.js` 能打开主窗口和编辑窗口，退出码 0，没有报错。窗口里的点击还没在这次会话里逐项点过。
+- 未完成事项：T10 仍 active。T09 仍 blocked。本次改动未提交。
+- 图谱：未建立。命令不存在。
+
+### 2026-09-26：README 写上适用场景
+
+- 本次做了什么：在 `README.md` 写明适用场景，并按 Shell 大版本写运行环境。Wayland 加上 Shell 50 的小版本是同一代。随后补上 2026-09 软件源里 Fedora、Debian、Arch、openSUSE 的对应版本。
+- 未完成事项：T10 仍 active。T09 仍 blocked。本次改动未提交。
+- 图谱：未受影响。
+
+### 2026-09-26：扩展声明并适配 Shell 45–50
+
+- 本次做了什么：`metadata.json` 的 `shell-version` 改为 45 到 50。指针读数和屏幕名字尺寸按这几代可能不同的返回值来取。带查询串的模块加载失败时，改回直接加载文件。
+- 验证信号：扩展脚本通过了 `node --check`。本机只登录过 Shell 50.1，45–49 还没有实机登录。改了 `extension.js`，要重新安装扩展并注销一次。
 - 未完成事项：T10 仍 active。T09 仍 blocked。本次改动未提交。
 - 图谱：未建立。命令不存在。
 

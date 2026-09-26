@@ -12,7 +12,7 @@ mod stroke;
 
 pub use capture::{CaptureUpdate, ChordCapture};
 pub use config::{
-    ConfigError, GestureConfig, TriggerButton, config_path, parse_config, write_config,
+    ConfigError, GestureConfig, MouseButton, TriggerButton, config_path, parse_config, write_config,
 };
 pub use copy::{
     Chord, CopyOutput, EmitError, KeySink, OutputEvent, chord_device_codes, evdev_from_gtk_keycode,

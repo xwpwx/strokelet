@@ -14,11 +14,20 @@ pub enum Decision {
     RightClick,
     Stroke,
     Cancel,
+    /// 按住 `hold` 再按 `press`。值是 evdev 键码。
+    Button {
+        hold: u16,
+        press: u16,
+    },
 }
 
 impl Decision {
     pub fn is_stroke(self) -> bool {
         matches!(self, Decision::Stroke)
+    }
+
+    pub fn injects(self) -> bool {
+        matches!(self, Decision::Stroke | Decision::Button { .. })
     }
 }
 

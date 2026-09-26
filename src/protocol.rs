@@ -32,15 +32,22 @@ pub enum CancelReason {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum ServerLine {
-    Hello { version: u32 },
-    Begin { id: u64 },
+    Hello {
+        version: u32,
+    },
+    Begin {
+        id: u64,
+    },
     End {
         id: u64,
         outcome: Outcome,
         #[serde(skip_serializing_if = "Option::is_none")]
         name: Option<String>,
     },
-    Cancel { id: u64, reason: CancelReason },
+    Cancel {
+        id: u64,
+        reason: CancelReason,
+    },
     Ping,
 }
 

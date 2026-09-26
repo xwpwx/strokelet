@@ -2,6 +2,7 @@ use evdev::{
     AbsoluteAxisCode, EventType, InputEvent, KeyCode, RelativeAxisCode, SynchronizationCode,
 };
 
+use crate::config::MouseButton;
 use crate::{Decision, Gesture, Limits};
 
 const WHEEL_CODES: [u16; 4] = [
@@ -114,6 +115,15 @@ pub struct FrameProcessor {
     pressed_at_ms: u64,
     trigger_code: u16,
     last_decision: Option<Decision>,
+    click_slop: f64,
+    chord_pairs: Vec<(u16, u16)>,
+    button_capture: bool,
+    fired_chord: Option<(u16, u16)>,
+    swallow: Option<u16>,
+    pending_hold: Option<u16>,
+    hold_x: f64,
+    hold_y: f64,
+    hold_forwarded: bool,
 }
 
 impl FrameProcessor {
@@ -126,7 +136,25 @@ impl FrameProcessor {
             pressed_at_ms: 0,
             trigger_code: KeyCode::BTN_RIGHT.0,
             last_decision: None,
+            click_slop: limits.click_slop_counts,
+            chord_pairs: Vec::new(),
+            button_capture: false,
+            fired_chord: None,
+            swallow: None,
+            pending_hold: None,
+            hold_x: 0.0,
+            hold_y: 0.0,
+            hold_forwarded: false,
         }
+    }
+
+    pub fn set_button_chords(&mut self, pairs: &[(u16, u16)]) {
+        self.chord_pairs = pairs.to_vec();
+    }
+
+    /// 录制组合键时，先按下的鼠标键是起始键，不限于当前轨迹触发键。
+    pub fn set_button_capture(&mut self, enabled: bool) {
+        self.button_capture = enabled;
     }
 
     pub fn last_decision(&self) -> Option<Decision> {
@@ -145,6 +173,10 @@ impl FrameProcessor {
         if code != self.trigger_code && self.tracking {
             self.gesture.abandon();
             self.tracking = false;
+            self.fired_chord = None;
+            self.swallow = None;
+            self.pending_hold = None;
+            self.hold_forwarded = false;
         }
         self.trigger_code = code;
     }
@@ -172,6 +204,8 @@ impl FrameProcessor {
         let mut right_down = false;
         let mut right_up = false;
         let mut cancel_now = false;
+        let mut extra_down = None;
+        let mut extra_up = None;
         for event in &frame {
             match self.classify_part(event) {
                 Part::RelX(value) => dx += value,
@@ -179,45 +213,190 @@ impl FrameProcessor {
                 Part::Wheel | Part::OtherKey => cancel_now = true,
                 Part::RightDown => right_down = true,
                 Part::RightUp => right_up = true,
+                Part::ExtraDown(code) => extra_down = Some(code),
+                Part::ExtraUp(code) => extra_up = Some(code),
                 Part::Other => {}
             }
         }
-        if right_down && !self.tracking {
+        if !self.tracking
+            && self.pending_hold.is_none()
+            && self.fired_chord.is_none()
+            && let Some(code) = extra_down.filter(|code| self.is_separate_hold(*code))
+        {
+            self.pending_hold = Some(code);
+            self.hold_x = 0.0;
+            self.hold_y = 0.0;
+            self.hold_forwarded = false;
+            self.last_decision = None;
+        }
+        let trigger_code = self.trigger_code;
+        let trigger_completes_hold = right_down
+            && self.fired_chord.is_none()
+            && self
+                .pending_hold
+                .is_some_and(|hold| self.claims_pair(hold, trigger_code));
+        let mut decided_this_frame = false;
+        if self.button_capture
+            && right_down
+            && !self.tracking
+            && self.pending_hold.is_none()
+            && self.fired_chord.is_none()
+        {
+            self.pending_hold = Some(trigger_code);
+            self.hold_x = 0.0;
+            self.hold_y = 0.0;
+            self.hold_forwarded = false;
+            self.last_decision = None;
+        } else if trigger_completes_hold {
+            if let Some(hold) = self.pending_hold {
+                self.fire_pair(hold, trigger_code);
+                decided_this_frame = true;
+            }
+        } else if right_down && !self.tracking {
             self.gesture.press();
             self.tracking = true;
             self.pressed_at_ms = self.now_ms;
             self.last_decision = None;
+            self.fired_chord = None;
         }
         let held_ms = self.now_ms.saturating_sub(self.pressed_at_ms);
         if self.tracking && (dx != 0 || dy != 0) {
             self.gesture.motion(f64::from(dx), f64::from(dy));
         }
-        if self.tracking && cancel_now {
-            self.gesture.cancel();
+        if self.pending_hold.is_some() && (dx != 0 || dy != 0) {
+            self.hold_x += f64::from(dx);
+            self.hold_y += f64::from(dy);
         }
         if self.tracking {
             self.gesture.advance(held_ms);
         }
+        if self.fired_chord.is_none()
+            && let Some(hold) = self.pending_hold
+            && let Some(press) =
+                extra_down.filter(|code| *code != hold && self.claims_pair(hold, *code))
+        {
+            self.fire_pair(hold, press);
+            decided_this_frame = true;
+        }
+        let claimed = self.tracking
+            && self.fired_chord.is_none()
+            && extra_down.is_some_and(|code| self.claims_pair(trigger_code, code));
+        if self.tracking && cancel_now {
+            self.gesture.cancel();
+        } else if let Some(code) = extra_down.filter(|_| claimed) {
+            self.fire_pair(trigger_code, code);
+            decided_this_frame = true;
+        } else if self.tracking && extra_down.is_some() && self.pending_hold != extra_down {
+            self.gesture.cancel();
+        }
+        let started_drag = !self.button_capture
+            && self.fired_chord.is_none()
+            && !self.hold_forwarded
+            && self.pending_hold.is_some()
+            && self.hold_x.hypot(self.hold_y) > self.click_slop;
+        let already_forwarded = self.hold_forwarded;
+        if started_drag {
+            self.hold_forwarded = true;
+        }
+        let hide_press = if self.fired_chord.is_some() {
+            self.fired_chord.map(|pair| pair.1).or(self.swallow)
+        } else {
+            self.swallow
+        };
+        let hide_hold = self.pending_hold.filter(|_| !already_forwarded);
         let mut out = Vec::new();
-        let trigger_code = self.trigger_code;
+        if started_drag && let Some(hold) = self.pending_hold {
+            out.extend([key_event(KeyCode(hold), 1), syn_report()]);
+        }
         let forwarded: Vec<_> = frame
             .iter()
             .copied()
-            .filter(|event| !is_trigger_button(event, trigger_code))
+            .filter(|event| {
+                !is_trigger_button(event, trigger_code)
+                    && !is_hidden(event, hide_press)
+                    && !is_hidden(event, hide_hold)
+            })
             .collect();
         if !forwarded.is_empty() {
             out.extend(forwarded);
             out.push(syn_report());
         }
+        if decided_this_frame {
+            self.swallow = self.fired_chord.map(|pair| pair.1);
+        }
+        if extra_up.is_some() && extra_up == self.swallow {
+            self.swallow = None;
+        }
+        if decided_this_frame && self.hold_forwarded {
+            if let Some(hold) = self.pending_hold {
+                out.extend([key_event(KeyCode(hold), 0), syn_report()]);
+            }
+            self.hold_forwarded = false;
+        }
+        let released_hold = self
+            .pending_hold
+            .filter(|hold| (*hold == trigger_code && right_up) || extra_up == Some(*hold));
+        if let Some(hold) = released_hold {
+            self.pending_hold = None;
+            if self.fired_chord.is_some() {
+                self.fired_chord = None;
+                if !decided_this_frame {
+                    self.last_decision = None;
+                }
+            } else if self.hold_forwarded {
+                self.hold_forwarded = false;
+            } else if self.button_capture {
+                self.last_decision = Some(Decision::Cancel);
+            } else {
+                out.extend(replay_click(hold));
+            }
+        }
         if right_up && self.tracking {
-            let decision = self.gesture.release(held_ms);
-            self.tracking = false;
-            self.last_decision = Some(decision);
-            if decision == Decision::RightClick {
-                out.extend(replay_click(trigger_code));
+            if self.fired_chord.take().is_some() {
+                let _ = self.gesture.release(held_ms);
+                self.tracking = false;
+                if !decided_this_frame {
+                    self.last_decision = None;
+                }
+            } else {
+                let decision = self.gesture.release(held_ms);
+                self.tracking = false;
+                self.last_decision = Some(decision);
+                if decision == Decision::RightClick {
+                    out.extend(replay_click(trigger_code));
+                }
             }
         }
         out
+    }
+
+    fn fire_pair(&mut self, hold: u16, press: u16) {
+        self.fired_chord = Some((hold, press));
+        self.swallow = Some(press);
+        if self.tracking {
+            self.gesture.cancel();
+        }
+        self.last_decision = Some(Decision::Button { hold, press });
+    }
+
+    fn is_separate_hold(&self, code: u16) -> bool {
+        if code == self.trigger_code || MouseButton::from_code(code).is_none() {
+            return false;
+        }
+        self.button_capture || self.chord_pairs.iter().any(|(hold, _)| *hold == code)
+    }
+
+    fn claims_pair(&self, hold: u16, press: u16) -> bool {
+        if hold == press {
+            return false;
+        }
+        if self.button_capture
+            && MouseButton::from_code(hold).is_some()
+            && MouseButton::from_code(press).is_some()
+        {
+            return true;
+        }
+        self.chord_pairs.contains(&(hold, press))
     }
 }
 
@@ -237,6 +416,8 @@ enum Part {
     Wheel,
     RightDown,
     RightUp,
+    ExtraDown(u16),
+    ExtraUp(u16),
     OtherKey,
     Other,
 }
@@ -258,11 +439,22 @@ impl FrameProcessor {
                 _ => Part::Other,
             };
         }
+        if event.event_type() == EventType::KEY && MouseButton::from_code(event.code()).is_some() {
+            return match event.value() {
+                1 => Part::ExtraDown(event.code()),
+                0 => Part::ExtraUp(event.code()),
+                _ => Part::Other,
+            };
+        }
         if event.event_type() == EventType::KEY {
             return Part::OtherKey;
         }
         Part::Other
     }
+}
+
+fn is_hidden(event: &InputEvent, code: Option<u16>) -> bool {
+    code.is_some_and(|code| event.event_type() == EventType::KEY && event.code() == code)
 }
 
 fn is_trigger_button(event: &InputEvent, trigger_code: u16) -> bool {

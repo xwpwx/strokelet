@@ -27,6 +27,35 @@ fn assert_blocks(name: &str, desktop: DesktopState) {
 }
 
 #[test]
+fn button_chord_injects_once() {
+    let mut gate = CopyGate::new();
+    assert_eq!(
+        gate.authorize(
+            Decision::Button {
+                hold: 0x111,
+                press: evdev_left(),
+            },
+            ready(),
+        ),
+        Injection::CopyOnce
+    );
+    assert_eq!(
+        gate.authorize(
+            Decision::Button {
+                hold: 0x111,
+                press: evdev_left(),
+            },
+            ready(),
+        ),
+        Injection::None
+    );
+}
+
+fn evdev_left() -> u16 {
+    0x110
+}
+
+#[test]
 fn fresh_copy_injects_once() {
     let mut gate = CopyGate::new();
     assert_eq!(

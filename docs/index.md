@@ -62,6 +62,7 @@ src/db/CONSTRAINTS.md
 - [docs/drafts/2026-09-25-strokelet-gesture-gui-plan.md](drafts/2026-09-25-strokelet-gesture-gui-plan.md) — 手势与快捷键设置 GUI 计划（非生效版本）
 - [docs/drafts/2026-09-25-strokelet-shortcut-capture-plan.md](drafts/2026-09-25-strokelet-shortcut-capture-plan.md) — 快捷键录制计划（非生效版本）
 - [docs/drafts/2026-09-25-strokelet-custom-stroke-plan.md](drafts/2026-09-25-strokelet-custom-stroke-plan.md) — 自定义轨迹计划（非生效版本）
+- [docs/drafts/2026-09-26-strokelet-button-chord-plan.md](drafts/2026-09-26-strokelet-button-chord-plan.md) — 鼠标组合键计划（非生效版本）
 
 ## Graphify
 

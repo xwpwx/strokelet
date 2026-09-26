@@ -1,7 +1,7 @@
 {
   "uuid": "strokelet@local",
   "name": "Strokelet Demo",
-  "description": "Right-button stroke demo",
-  "shell-version": ["50"],
+  "description": "Mouse stroke shortcuts for GNOME Shell 45 through 50",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
   "url": "https://example.invalid/strokelet"
 }
