@@ -20,7 +20,7 @@
 |---|---|---|---|---|
 | rules | [Graphify 代码图谱工作流](official/rules/graphify-workflow.md) | 1.0.0 | graphify-workflow | 图谱导航层的使用、更新与验证规则 |
 | requirements | [Strokelet 首版 Demo 需求](official/requirements/strokelet-demo.md) | 1.1.0 | strokelet-demo-requirements | 用户行为、范围与验收 |
-| design | [Strokelet 首版 Demo 架构](official/design/strokelet-demo.md) | 1.2.0 | strokelet-demo-architecture | 组件、数据流和安全边界 |
+| design | [Strokelet 首版 Demo 架构](official/design/strokelet-demo.md) | 1.2.1 | strokelet-demo-architecture | 组件、数据流和安全边界 |
 | specs | [Strokelet 手势识别规格](official/specs/gesture-recognition.md) | 1.0.0 | gesture-recognition | 识别状态、阈值与判据 |
 
 以上文档为首版 Demo 的当前生效依据；草稿区材料仍是非生效版本。

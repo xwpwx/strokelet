@@ -139,5 +139,5 @@
 - 决策：deb 安装程序、系统扩展和用户服务。服务启动前以 root 只创建 `/run/strokelet/<uid>`。`strokelet run --auto` 自己找 Wayland 会话，并在只有一只可用鼠标时自动选择。uinput 用 udev `uaccess`，不把用户加入 `input` 组。
 - 原因：用户要把现在的演示收成安装后就能用的 deb，而不是每次自己编译、建目录、查设备和会话号。
 - 否决方案：把日常用户加入 `input` 组；把 socket 挪出 `/run/strokelet/<uid>`。
-- 约束/影响：多只鼠标时要在 `~/.config/strokelet/device` 写明路径。第一次安装扩展后要注销一次。Shell 45 到 49 仍未在对应系统上登录验收。
+- 约束/影响：多只鼠标时要在 `~/.config/strokelet/device` 写明路径。第一次安装扩展后要注销一次。Shell 45 到 49 仍未在对应系统上登录验收。用户服务里的 `ExecStartPre=+` 并不能变成 root，目录要在系统创建 `/run/user/<uid>` 时由 root 准备。
 - 相关文档：docs/official/requirements/strokelet-demo.md、docs/official/design/strokelet-demo.md

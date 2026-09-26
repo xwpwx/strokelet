@@ -39,6 +39,8 @@ mkdir -p \
     "$stage/usr/bin" \
     "$stage/usr/lib/strokelet" \
     "$stage/usr/lib/systemd/user" \
+    "$stage/usr/lib/systemd/system/user-runtime-dir@.service.d" \
+    "$stage/usr/lib/tmpfiles.d" \
     "$stage/usr/lib/udev/rules.d" \
     "$stage/usr/share/applications" \
     "$stage/usr/share/doc/strokelet" \
@@ -50,6 +52,8 @@ install -m 0755 "$bin" "$stage/usr/bin/strokelet"
 install -m 0755 packaging/strokelet-mkruntime "$stage/usr/lib/strokelet/strokelet-mkruntime"
 install -m 0755 packaging/enable-extension.sh "$stage/usr/lib/strokelet/enable-extension.sh"
 install -m 0644 packaging/strokelet.service "$stage/usr/lib/systemd/user/strokelet.service"
+install -m 0644 packaging/strokelet-runtime.conf "$stage/usr/lib/systemd/system/user-runtime-dir@.service.d/strokelet.conf"
+install -m 0644 packaging/strokelet.tmpfiles "$stage/usr/lib/tmpfiles.d/strokelet.conf"
 install -m 0644 packaging/70-strokelet-uinput.rules "$stage/usr/lib/udev/rules.d/70-strokelet-uinput.rules"
 install -m 0644 packaging/strokelet-settings.desktop "$stage/usr/share/applications/org.strokelet.Settings.desktop"
 install -m 0644 packaging/strokelet-enable.desktop "$stage/etc/xdg/autostart/strokelet-enable.desktop"

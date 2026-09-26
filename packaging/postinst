@@ -15,16 +15,23 @@ fi
 if [ -d /run/systemd/system ]; then
     systemctl daemon-reload || true
 fi
+if command -v systemd-tmpfiles >/dev/null 2>&1; then
+    systemd-tmpfiles --create /usr/lib/tmpfiles.d/strokelet.conf || true
+fi
 
+system_ext=/usr/share/gnome-shell/extensions/strokelet@local
 for home in /home/*; do
     [ -d "$home" ] || continue
     user=$(basename "$home")
     uid=$(id -u "$user" 2>/dev/null || true)
     [ -n "$uid" ] || continue
+    /usr/lib/strokelet/strokelet-mkruntime "$uid" || true
     ext="$home/.local/share/gnome-shell/extensions/strokelet@local"
     marker="$ext/STROKELET_OWNED"
     if [ -f "$marker" ] && [ "$(cat "$marker")" = "strokelet@local" ]; then
-        rm -rf "$ext"
+        cp -a "$system_ext/." "$ext/"
+        printf '%s\n' 'strokelet@local' > "$marker"
+        chown -R "$user:$user" "$ext" || true
     fi
     runtime="/run/user/$uid"
     [ -S "$runtime/bus" ] || continue

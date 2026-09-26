@@ -2,15 +2,14 @@
 Description=Strokelet mouse gestures
 After=graphical-session.target
 PartOf=graphical-session.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
 
 [Service]
 Type=simple
-ExecStartPre=+/usr/lib/strokelet/strokelet-mkruntime %U %G
 ExecStart=/usr/bin/strokelet run --auto
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=60
-StartLimitBurst=3
 
 [Install]
 WantedBy=graphical-session.target

@@ -1,20 +1,33 @@
 #!/bin/sh
-# Create the root-owned runtime directory the user service is allowed to bind in.
+# Create the root-owned runtime directory the user is allowed to bind in.
+# This must run as root. A user service cannot raise itself to root.
 set -eu
 
 uid=${1:?}
-gid=${2:?}
 case "$uid" in
     ''|*[!0-9]*) echo "strokelet: uid must be numeric" >&2; exit 1 ;;
-esac
-case "$gid" in
-    ''|*[!0-9]*) echo "strokelet: gid must be numeric" >&2; exit 1 ;;
 esac
 if [ "$uid" -eq 0 ]; then
     echo "strokelet: refusing a runtime directory for root" >&2
     exit 1
 fi
+if [ "$(id -u)" -ne 0 ]; then
+    echo "strokelet: runtime directory must be created as root" >&2
+    exit 1
+fi
 
+gid=${2:-}
+if [ -z "$gid" ]; then
+    gid=$(id -g "$uid")
+fi
+case "$gid" in
+    ''|*[!0-9]*) echo "strokelet: gid must be numeric" >&2; exit 1 ;;
+esac
+
+if [ -L /run/strokelet ]; then
+    echo "strokelet: refusing symlink /run/strokelet" >&2
+    exit 1
+fi
 install -d -o root -g root -m 0755 /run/strokelet
 dir="/run/strokelet/$uid"
 if [ -L "$dir" ]; then

@@ -307,3 +307,17 @@
 - 未完成事项：T10 仍 active。T09 仍 blocked。本次改动未提交。改的是 `indicator.js`，重新加载扩展即可，不用注销。
 - 图谱：未建立。命令不存在。
 
+### 2026-09-26：安装后服务起不来、顶栏图标消失
+
+- 本次做了什么：用户服务里的提权前缀并没有变成 root，准备目录失败，服务一直重启。安装时又删掉了正在使用的用户扩展，图标因此消失。目录改为在登录时由 root 创建。当前这次登录已跳过那个失败步骤，扩展已装回并重新加载。
+- 验证信号：`systemctl --user status strokelet.service` 为 active。日志里是 `using mouse` 指向 MCHOSE，随后 `grabbed`。`gnome-extensions info strokelet@local` 状态为 ACTIVE。新的 deb 还没装上，注销或重启后这次临时跳过会失效。
+- 未完成事项：T10 仍 active。T09 仍 blocked。本次改动未提交。
+- 图谱：未建立。命令不存在。
+
+### 2026-09-26：顶栏标记可以打开设置
+
+- 本次做了什么：右上角标记的菜单加上「设置」，会启动 `strokelet settings`。
+- 验证信号：`node --check extension/strokelet@local/indicator.js` 通过。`scripts/reload-extension.sh` 后扩展状态为 ACTIVE。菜单里还没点过。
+- 未完成事项：T10 仍 active。T09 仍 blocked。本次改动未提交。
+- 图谱：未建立。命令不存在。
+

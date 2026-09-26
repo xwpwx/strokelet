@@ -14,3 +14,4 @@
 | 2026-09-25 | docs/official/design/strokelet-demo.md | 1.1.0 | 修改 | 运行时目录权限由 0750 改为 0770，使目标用户能绑定 socket |
 | 2026-09-26 | docs/official/requirements/strokelet-demo.md | 1.1.0 | 修改 | 安装包纳入范围：用户服务、自动选择会话和鼠标 |
 | 2026-09-26 | docs/official/design/strokelet-demo.md | 1.2.0 | 修改 | 安装包以 root 只创建运行时目录，uinput 走 uaccess |
+| 2026-09-26 | docs/official/design/strokelet-demo.md | 1.2.1 | 修改 | 运行时目录改由登录时的 root 钩子创建，用户服务不能提权 |

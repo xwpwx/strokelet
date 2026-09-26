@@ -1,5 +1,6 @@
 import Cairo from 'gi://cairo';
 import Clutter from 'gi://Clutter';
+import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
@@ -25,6 +26,7 @@ export const StrokeletIndicator = GObject.registerClass({
         this.add_child(this._mark);
         this._status = new PopupMenu.PopupMenuItem('未连接', {reactive: false});
         this.menu.addMenuItem(this._status);
+        this.menu.addAction('设置', () => this._openSettings());
         this._pauseItem = new PopupMenu.PopupSwitchMenuItem('暂停', false);
         this._pauseItem.connect('toggled', item => {
             this.paused = item.state;
@@ -54,6 +56,18 @@ export const StrokeletIndicator = GObject.registerClass({
         cr.arc(6.1, 12.3, 2.05, 0, Math.PI * 2);
         cr.fill();
         cr.$dispose();
+    }
+
+    _openSettings() {
+        this.menu.close();
+        try {
+            const command = Gio.File.new_for_path('/usr/bin/strokelet').query_exists(null)
+                ? '/usr/bin/strokelet'
+                : 'strokelet';
+            Gio.Subprocess.new([command, 'settings'], Gio.SubprocessFlags.NONE);
+        } catch (error) {
+            log(`strokelet: cannot open settings: ${error}`);
+        }
     }
 
     _selfTestAfterClose() {
