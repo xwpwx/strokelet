@@ -60,11 +60,14 @@ install -m 0644 packaging/strokelet-settings.desktop "$stage/usr/share/applicati
 install -m 0644 packaging/strokelet-enable.desktop "$stage/etc/xdg/autostart/strokelet-enable.desktop"
 install -m 0644 packaging/copyright "$stage/usr/share/doc/strokelet/copyright"
 install -m 0644 settings/app.js "$stage/usr/share/strokelet/settings/app.js"
+install -m 0644 settings/strings.js "$stage/usr/share/strokelet/settings/strings.js"
 cp -a extension/strokelet@local/. "$stage/usr/share/gnome-shell/extensions/strokelet@local/"
 rm -f "$stage/usr/share/gnome-shell/extensions/strokelet@local/STROKELET_OWNED"
 chmod 0644 "$stage/usr/share/gnome-shell/extensions/strokelet@local/"*
 mkdir -p "$stage/usr/share/gnome-shell/extensions/strokelet@local/settings"
 install -m 0644 settings/app.js "$stage/usr/share/gnome-shell/extensions/strokelet@local/settings/app.js"
+install -m 0644 settings/strings.js "$stage/usr/share/gnome-shell/extensions/strokelet@local/settings/strings.js"
+install -m 0644 settings/strings.js "$stage/usr/share/gnome-shell/extensions/strokelet@local/strings.js"
 find "$stage" -type d -exec chmod 0755 {} +
 
 install -m 0755 packaging/postinst "$stage/DEBIAN/postinst"

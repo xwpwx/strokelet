@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::stroke::{MAX_RULES, best_match, conflicts, straight_points};
-use crate::{Chord, Direction, WheelDirection};
+use crate::stroke::{ABSOLUTE_MAX_RULES, MAX_RULES, best_match, conflicts, straight_points};
+use crate::{Chord, Direction, Limits, WheelDirection};
 
 pub const CONFIG_VERSION: u32 = 1;
 
@@ -132,6 +132,8 @@ pub struct StrokeRule {
 pub struct GestureConfig {
     pub trigger: TriggerButton,
     pub rules: Vec<StrokeRule>,
+    pub limits: Limits,
+    pub max_rules: usize,
 }
 
 #[derive(Debug)]
@@ -162,6 +164,8 @@ impl GestureConfig {
                 button: None,
                 wheel: None,
             }],
+            limits: Limits::default(),
+            max_rules: MAX_RULES,
         }
     }
 
@@ -238,6 +242,21 @@ struct FileDto {
     version: u32,
     trigger: String,
     rules: Vec<RuleDto>,
+    #[serde(default)]
+    recognition: RecognitionDto,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+struct RecognitionDto {
+    #[serde(rename = "clickSlop")]
+    click_slop: f64,
+    #[serde(rename = "minLength")]
+    min_length: f64,
+    #[serde(rename = "maxDurationMs")]
+    max_duration_ms: u64,
+    #[serde(rename = "maxRules")]
+    max_rules: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -267,6 +286,44 @@ struct RuleDto {
     wheel: String,
 }
 
+impl Default for RecognitionDto {
+    fn default() -> Self {
+        Self {
+            click_slop: 12.0,
+            min_length: 80.0,
+            max_duration_ms: 2500,
+            max_rules: u32::try_from(MAX_RULES).unwrap_or(16),
+        }
+    }
+}
+
+fn limits_from(recognition: &RecognitionDto) -> Result<(Limits, usize), String> {
+    let click = recognition.click_slop;
+    let length = recognition.min_length;
+    if !click.is_finite() || !(1.0..=400.0).contains(&click) {
+        return Err("仍算点击的距离要在 1 到 400 之间".into());
+    }
+    if !length.is_finite() || !(20.0..=5000.0).contains(&length) || length <= click {
+        return Err("最短轨迹要大于仍算点击的距离，并且在 20 到 5000 之间".into());
+    }
+    if !(200..=60_000).contains(&recognition.max_duration_ms) {
+        return Err("最长按住要在 200 到 60000 毫秒之间".into());
+    }
+    let max_rules = usize::try_from(recognition.max_rules).unwrap_or(0);
+    if !(1..=ABSOLUTE_MAX_RULES).contains(&max_rules) {
+        return Err(format!("规则条数要在 1 到 {ABSOLUTE_MAX_RULES} 之间"));
+    }
+    Ok((
+        Limits {
+            start_counts: click,
+            click_slop_counts: click,
+            min_up_counts: length,
+            max_duration_ms: recognition.max_duration_ms,
+        },
+        max_rules,
+    ))
+}
+
 pub fn parse_config(text: &str) -> Result<GestureConfig, String> {
     let file: FileDto = serde_json::from_str(text).map_err(|err| err.to_string())?;
     if file.version != CONFIG_VERSION {
@@ -274,10 +331,11 @@ pub fn parse_config(text: &str) -> Result<GestureConfig, String> {
     }
     let trigger = TriggerButton::parse(&file.trigger)
         .ok_or_else(|| format!("unknown trigger {}", file.trigger))?;
+    let (limits, max_rules) = limits_from(&file.recognition)?;
     let mut rules = Vec::new();
     for rule in file.rules {
-        if rules.len() >= MAX_RULES {
-            return Err(format!("at most {MAX_RULES} strokes"));
+        if rules.len() >= max_rules {
+            return Err(format!("最多 {max_rules} 条规则"));
         }
         let chord = chord_from_rule(&rule)?;
         let screen_name = screen_name_from(&rule.name)?;
@@ -349,7 +407,12 @@ pub fn parse_config(text: &str) -> Result<GestureConfig, String> {
             wheel: None,
         });
     }
-    Ok(GestureConfig { trigger, rules })
+    Ok(GestureConfig {
+        trigger,
+        rules,
+        limits,
+        max_rules,
+    })
 }
 
 fn points_from_rule(rule: &RuleDto) -> Result<Vec<(f64, f64)>, String> {
@@ -461,6 +524,12 @@ pub fn write_config(path: &Path, config: &GestureConfig) -> Result<(), ConfigErr
     let body = serde_json::json!({
         "version": CONFIG_VERSION,
         "trigger": config.trigger.name(),
+        "recognition": {
+            "clickSlop": config.limits.click_slop_counts,
+            "minLength": config.limits.min_up_counts,
+            "maxDurationMs": config.limits.max_duration_ms,
+            "maxRules": config.max_rules,
+        },
         "rules": rules,
     });
     let text =

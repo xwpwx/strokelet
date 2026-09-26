@@ -112,6 +112,10 @@ pub struct Gesture {
 }
 
 impl Gesture {
+    pub fn set_limits(&mut self, limits: Limits) {
+        self.limits = limits;
+    }
+
     pub fn new(limits: Limits) -> Self {
         Self {
             limits,

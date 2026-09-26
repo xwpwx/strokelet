@@ -9,6 +9,8 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
+import {readLanguage, translate} from './strings.js';
+
 export const StrokeletIndicator = GObject.registerClass({
     GTypeName: `StrokeletIndicator${Date.now()}`,
 }, class extends PanelMenu.Button {
@@ -25,23 +27,43 @@ export const StrokeletIndicator = GObject.registerClass({
         this._mark.connect('repaint', area => this._paintMark(area));
         this._mark.connect('style-changed', () => this._mark.queue_repaint());
         this.add_child(this._mark);
-        this._status = new PopupMenu.PopupMenuItem('未连接', {reactive: false});
+        this._status = new PopupMenu.PopupMenuItem('', {reactive: false});
         this.menu.addMenuItem(this._status);
-        this.menu.addAction('设置', () => this._openSettings());
-        this._pauseItem = this.menu.addAction('暂停', () => this._togglePause());
-        this.menu.addAction('退出', () => this._quit());
+        this._settingsItem = this.menu.addAction('', () => this._openSettings());
+        this._pauseItem = this.menu.addAction('', () => this._togglePause());
+        this._quitItem = this.menu.addAction('', () => this._quit());
+        this._applyLanguage();
+        this.menu.connect('open-state-changed', (_menu, open) => {
+            if (open)
+                this._applyLanguage();
+        });
+    }
+
+    _text(key) {
+        return translate(readLanguage(), key);
+    }
+
+    _applyLanguage() {
+        this._status.label.text = this._connected
+            ? this._text('menu.connected')
+            : this._text('menu.disconnected');
+        this._settingsItem.label.text = this._text('menu.settings');
+        this._pauseItem.label.text = this.paused
+            ? this._text('menu.resume')
+            : this._text('menu.pause');
+        this._quitItem.label.text = this._text('menu.quit');
     }
 
     _togglePause() {
         this.paused = !this.paused;
-        this._pauseItem.label.text = this.paused ? '启动' : '暂停';
+        this._applyLanguage();
         this._mark.queue_repaint();
         this._overlay.endActive();
     }
 
     setConnected(connected) {
         this._connected = connected;
-        this._status.label.text = connected ? '已连接' : '未连接';
+        this._applyLanguage();
         this._mark.queue_repaint();
     }
 

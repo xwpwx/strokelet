@@ -1,5 +1,7 @@
 # Strokelet
 
+[English](README.en.md)
+
 在 GNOME Shell 45 到 50 的 Wayland 桌面上，用一笔轨迹或两个鼠标键发出一组快捷键，并在屏幕上画出不抢焦点的轨迹。普通点击仍然可用。
 
 这是一个自娱自乐的小工具。作者习惯用鼠标手势，升到 Ubuntu 26.04、桌面全面转向 Wayland 之后，用 vibe coding 做了它。
@@ -111,4 +113,4 @@ scripts/run-demo.sh --device /dev/input/by-id/你的鼠标 --uid "$(id -u)" --se
 - 改 `overlay.js`、`indicator.js`、`transport.js` 后运行 `scripts/reload-extension.sh`。它会把扩展复制进用户目录，再让当前 Shell 关掉并重新打开。
 - 只有第一次安装，或者改了 `extension.js` 本身，才需要注销一次。GNOME 50 不能在 Wayland 上热重载扩展入口文件。
 
-默认阈值：起步 12 counts，上划至少 80 counts，最长 2500 ms。轨迹要移动约 12 个屏幕像素后才显示。
+默认识别：移动不超过 12 counts 仍算点击，轨迹至少 80 counts，最长按住 2500 毫秒，最多 16 条规则。这些都在设置的「识别」里改。轨迹要移动约 12 个屏幕像素后才显示。

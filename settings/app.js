@@ -4,11 +4,13 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk?version=4.0';
 
+import {readLanguage, translate, translateDaemon, writeLanguage} from './strings.js';
+
+let t = key => key;
+let languageCode = 'zh';
+
 const TRIGGERS = ['left', 'right', 'middle', 'forward', 'back'];
-const TRIGGER_LABELS = ['左键', '右键', '中键', '侧键前进', '侧键后退'];
 const NAME_PLACES = ['bottom', 'pointer'];
-const NAME_PLACE_LABELS = ['屏幕下方居中', '松手的地方'];
-const MAX_RULES = 16;
 const STYLE = `
   .stroke-preview {
     background-color: alpha(@window_fg_color, 0.06);
@@ -27,6 +29,12 @@ const app = new Adw.Application({application_id: 'org.strokelet.Settings'});
 
 app.connect('activate', () => {
     installCss();
+    openSettingsWindow(readLanguage());
+});
+
+function openSettingsWindow(language) {
+    languageCode = language;
+    t = (key, vars) => translate(language, key, vars);
     const config = readConfig();
     const window = new Adw.ApplicationWindow({
         application: app,
@@ -39,30 +47,34 @@ app.connect('activate', () => {
     const header = new Adw.HeaderBar();
     header.title_widget = new Adw.WindowTitle({
         title: 'Strokelet',
-        subtitle: '给鼠标动作配快捷键',
+        subtitle: t('window.subtitle'),
     });
-    const save = new Gtk.Button({label: '保存', css_classes: ['suggested-action']});
+    const save = new Gtk.Button({label: t('action.save'), css_classes: ['suggested-action']});
     header.pack_end(save);
     toolbar.add_top_bar(header);
     const dirtyBanner = new Adw.Banner({
-        title: '有修改还没保存',
-        button_label: '保存',
+        title: t('dirty.title'),
+        button_label: t('action.save'),
         revealed: false,
     });
     toolbar.add_top_bar(dirtyBanner);
 
     const page = new Adw.PreferencesPage();
+    const languageRow = new Adw.ComboRow({
+        title: t('language.label'),
+        model: modelOf(['中文', 'English']),
+    });
+    languageRow.selected = language === 'en' ? 1 : 0;
+    page.add(languageRow);
     const mice = listMice();
     const savedMouse = readDevice();
     const mouseGroup = new Adw.PreferencesGroup({
-        title: '鼠标',
-        description: mice.length > 1
-            ? '这台电脑有多只鼠标。保存后使用下面这一只。'
-            : '保存后使用这只鼠标。',
+        title: t('mouse.group'),
+        description: mice.length > 1 ? t('mouse.many') : t('mouse.one'),
     });
     const mouseRow = new Adw.ComboRow({
-        title: '使用这只',
-        model: modelOf(mice.length === 0 ? ['没有找到鼠标'] : mice.map(mouse => mouse.name)),
+        title: t('mouse.use'),
+        model: modelOf(mice.length === 0 ? [t('mouse.none')] : mice.map(mouse => mouse.name)),
         sensitive: mice.length > 0,
     });
     const savedIndex = mice.findIndex(mouse => mouse.path === savedMouse);
@@ -71,27 +83,30 @@ app.connect('activate', () => {
     page.add(mouseGroup);
     const selectedMouse = () => mice[mouseRow.selected]?.path || '';
     const triggerGroup = new Adw.PreferencesGroup({
-        title: '轨迹',
-        description: '画轨迹时按住这个键。鼠标组合不看它，以你先按下的那个键为准。',
+        title: t('trigger.group'),
+        description: t('trigger.description'),
     });
-    const trigger = new Adw.ComboRow({title: '触发键', model: modelOf(TRIGGER_LABELS)});
+    const trigger = new Adw.ComboRow({
+        title: t('trigger.label'),
+        model: modelOf(TRIGGERS.map(name => buttonPhrase(name))),
+    });
     trigger.selected = Math.max(0, TRIGGERS.indexOf(config.trigger));
     triggerGroup.add(trigger);
     page.add(triggerGroup);
 
     const appearance = readAppearance();
     const displayGroup = new Adw.PreferencesGroup({
-        title: '显示',
-        description: '屏幕上的轨迹和成功后的名字。保存后，下一笔就会换上。',
+        title: t('display.group'),
+        description: t('display.description'),
     });
     const namePlaceRow = new Adw.ComboRow({
-        title: '名字位置',
-        model: modelOf(NAME_PLACE_LABELS),
+        title: t('display.namePlace'),
+        model: modelOf([t('display.bottom'), t('display.pointer')]),
     });
     namePlaceRow.selected = Math.max(0, NAME_PLACES.indexOf(appearance.namePlace));
     const widthRow = new Adw.SpinRow({
-        title: '线条粗细',
-        subtitle: '像素',
+        title: t('display.width'),
+        subtitle: t('display.pixels'),
         adjustment: new Gtk.Adjustment({
             lower: 2,
             upper: 20,
@@ -107,9 +122,30 @@ app.connect('activate', () => {
     const selectedNamePlace = () => NAME_PLACES[namePlaceRow.selected] || 'bottom';
     const selectedLineWidth = () => Math.round(widthRow.get_value());
 
+    const recognition = recognitionOf(config);
+    const recognizeGroup = new Adw.PreferencesGroup({
+        title: t('recognize.group'),
+        description: t('recognize.description'),
+    });
+    const clickRow = spinRow(t('recognize.click'), t('recognize.clickHint'), recognition.clickSlop, 1, 400, 1);
+    const lengthRow = spinRow(t('recognize.length'), t('recognize.lengthHint'), recognition.minLength, 20, 5000, 10);
+    const durationRow = spinRow(t('recognize.duration'), t('recognize.durationHint'), recognition.maxDurationMs, 200, 60000, 100);
+    const maxRulesRow = spinRow(t('recognize.maxRules'), t('recognize.rulesUnit'), recognition.maxRules, 1, 64, 1);
+    recognizeGroup.add(clickRow);
+    recognizeGroup.add(lengthRow);
+    recognizeGroup.add(durationRow);
+    recognizeGroup.add(maxRulesRow);
+    page.add(recognizeGroup);
+    const selectedRecognition = () => ({
+        clickSlop: Math.round(clickRow.get_value()),
+        minLength: Math.round(lengthRow.get_value()),
+        maxDurationMs: Math.round(durationRow.get_value()),
+        maxRules: Math.round(maxRulesRow.get_value()),
+    });
+
     const rules = config.rules.map(rule => cloneRule(rule));
-    const rulesGroup = new Adw.PreferencesGroup({title: '规则'});
-    const add = new Gtk.Button({label: '添加', css_classes: ['flat'], tooltip_text: '添加一条规则'});
+    const rulesGroup = new Adw.PreferencesGroup({title: t('rules.group')});
+    const add = new Gtk.Button({label: t('action.add'), css_classes: ['flat'], tooltip_text: t('rules.addTooltip')});
     rulesGroup.set_header_suffix(add);
     const ruleRows = [];
     const triggerName = () => TRIGGERS[trigger.selected] || 'right';
@@ -120,6 +156,7 @@ app.connect('activate', () => {
         mouse: selectedMouse(),
         namePlace: selectedNamePlace(),
         lineWidth: selectedLineWidth(),
+        recognition: selectedRecognition(),
     });
     let baseline = '';
     const updateDirty = () => {
@@ -128,12 +165,12 @@ app.connect('activate', () => {
     const refresh = () => {
         ruleRows.splice(0).forEach(row => rulesGroup.remove(row));
         rulesGroup.description = rules.length === 0
-            ? '点这一栏右边的「添加」。一条规则是一个鼠标动作，加上要按下的快捷键。'
-            : `点一条可以修改。已有 ${rules.length} 条，最多 ${MAX_RULES} 条。`;
+            ? t('rules.emptyHint')
+            : t('rules.count', {count: rules.length, max: selectedRecognition().maxRules});
         if (rules.length === 0) {
             const empty = new Adw.ActionRow({
-                title: '还没有规则',
-                subtitle: '添加后，选画轨迹、按两个鼠标键，或按住再滚轮，再录快捷键。',
+                title: t('rules.emptyTitle'),
+                subtitle: t('rules.emptySubtitle'),
             });
             rulesGroup.add(empty);
             ruleRows.push(empty);
@@ -155,7 +192,7 @@ app.connect('activate', () => {
                 icon_name: 'user-trash-symbolic',
                 valign: Gtk.Align.CENTER,
                 css_classes: ['flat'],
-                tooltip_text: '删除这条规则',
+                tooltip_text: t('rules.deleteTooltip'),
             });
             remove.connect('clicked', () => confirmDelete(window, rowTitle(rule), () => {
                 rules.splice(index, 1);
@@ -181,8 +218,8 @@ app.connect('activate', () => {
 
     let shownTrigger = triggerName();
     add.connect('clicked', () => {
-        if (rules.length >= MAX_RULES) {
-            toastOverlay.add_toast(new Adw.Toast({title: `最多 ${MAX_RULES} 条规则`}));
+        if (rules.length >= selectedRecognition().maxRules) {
+            toastOverlay.add_toast(new Adw.Toast({title: t('rules.max', {max: selectedRecognition().maxRules})}));
             return;
         }
         const rule = {};
@@ -194,6 +231,8 @@ app.connect('activate', () => {
     mouseRow.connect('notify::selected', () => updateDirty());
     namePlaceRow.connect('notify::selected', () => updateDirty());
     widthRow.connect('notify::value', () => updateDirty());
+    for (const row of [clickRow, lengthRow, durationRow, maxRulesRow])
+        row.connect('notify::value', () => updateDirty());
     trigger.connect('notify::selected', () => {
         if (triggerName() === shownTrigger)
             return;
@@ -204,14 +243,18 @@ app.connect('activate', () => {
         const text = `${JSON.stringify({
             version: 1,
             trigger: triggerName(),
+            recognition: selectedRecognition(),
             rules,
         }, null, 2)}\n`;
         const problem = checkGestures(text);
         if (problem) {
-            const dialog = new Adw.AlertDialog({heading: '没有保存', body: problem});
-            dialog.add_response('ok', '好');
+            const dialog = new Adw.AlertDialog({
+                heading: t('save.failed'),
+                body: translateDaemon(language, problem),
+            });
+            dialog.add_response('ok', t('action.ok'));
             dialog.present(window);
-            return;
+            return false;
         }
         GLib.file_set_contents(configFile(), text);
         const mouse = selectedMouse();
@@ -224,11 +267,12 @@ app.connect('activate', () => {
         const reloaded = restarted ? false : sendReload();
         toastOverlay.add_toast(new Adw.Toast({
             title: restarted
-                ? '已保存，已换上这只鼠标'
+                ? t('save.mouse')
                 : reloaded
-                    ? '已保存，正在运行的演示已换上新规则'
-                    : '已保存。下次启动时会用这份规则',
+                    ? t('save.reloaded')
+                    : t('save.later'),
         }));
+        return true;
     };
     dirtyBanner.connect('button-clicked', () => writeConfig());
     save.connect('clicked', () => writeConfig());
@@ -236,11 +280,11 @@ app.connect('activate', () => {
         if (snapshot() === baseline)
             return false;
         const dialog = new Adw.AlertDialog({
-            heading: '还有没保存的修改',
-            body: '关掉窗口会丢掉这些修改。',
+            heading: t('dirty.closeTitle'),
+            body: t('dirty.closeBody'),
         });
-        dialog.add_response('cancel', '继续编辑');
-        dialog.add_response('discard', '丢掉');
+        dialog.add_response('cancel', t('action.keepEditing'));
+        dialog.add_response('discard', t('action.discard'));
         dialog.set_response_appearance('discard', Adw.ResponseAppearance.DESTRUCTIVE);
         dialog.set_default_response('cancel');
         dialog.set_close_response('cancel');
@@ -253,8 +297,51 @@ app.connect('activate', () => {
         dialog.present(window);
         return true;
     });
+    let languageReady = false;
+    languageRow.connect('notify::selected', () => {
+        if (!languageReady)
+            return;
+        const next = languageRow.selected === 1 ? 'en' : 'zh';
+        if (next === language)
+            return;
+        const revert = () => {
+            languageReady = false;
+            languageRow.selected = language === 'en' ? 1 : 0;
+            languageReady = true;
+        };
+        const go = () => {
+            writeLanguage(next);
+            openSettingsWindow(next);
+            window.destroy();
+        };
+        if (snapshot() === baseline) {
+            go();
+            return;
+        }
+        const dialog = new Adw.AlertDialog({
+            heading: t('language.switchTitle'),
+            body: t('language.switchBody'),
+        });
+        dialog.add_response('cancel', t('action.cancel'));
+        dialog.add_response('discard', t('language.discardSwitch'));
+        dialog.add_response('save', t('language.saveSwitch'));
+        dialog.set_response_appearance('discard', Adw.ResponseAppearance.DESTRUCTIVE);
+        dialog.set_response_appearance('save', Adw.ResponseAppearance.SUGGESTED);
+        dialog.set_default_response('cancel');
+        dialog.set_close_response('cancel');
+        dialog.connect('response', (_dialog, response) => {
+            if (response === 'save' && writeConfig())
+                go();
+            else if (response === 'discard')
+                go();
+            else
+                revert();
+        });
+        dialog.present(window);
+    });
+    languageReady = true;
     window.present();
-});
+}
 
 app.run([]);
 
@@ -270,11 +357,11 @@ function installCss() {
 
 function confirmDelete(parent, title, done) {
     const dialog = new Adw.AlertDialog({
-        heading: `删除「${title}」？`,
-        body: '这条规则会从列表里去掉。要点保存才会写进文件。',
+        heading: t('rules.deleteTitle', {name: title}),
+        body: t('rules.deleteBody'),
     });
-    dialog.add_response('cancel', '取消');
-    dialog.add_response('delete', '删除');
+    dialog.add_response('cancel', t('action.cancel'));
+    dialog.add_response('delete', t('action.delete'));
     dialog.set_response_appearance('delete', Adw.ResponseAppearance.DESTRUCTIVE);
     dialog.set_default_response('cancel');
     dialog.set_close_response('cancel');
@@ -344,8 +431,17 @@ function readAppearance() {
 function writeAppearance(namePlace, lineWidth) {
     const dir = GLib.build_filenamev([GLib.get_user_config_dir(), 'strokelet']);
     GLib.mkdir_with_parents(dir, 0o755);
-    const text = `${JSON.stringify({namePlace, lineWidth}, null, 2)}\n`;
-    GLib.file_set_contents(appearanceFile(), text);
+    let data = {};
+    try {
+        const [ok, bytes] = GLib.file_get_contents(appearanceFile());
+        if (ok)
+            data = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+        data = {};
+    }
+    data.namePlace = namePlace;
+    data.lineWidth = lineWidth;
+    GLib.file_set_contents(appearanceFile(), `${JSON.stringify(data, null, 2)}\n`);
 }
 
 function writeDevice(path) {
@@ -398,6 +494,38 @@ function defaultConfig() {
     };
 }
 
+function recognitionOf(config) {
+    const raw = config.recognition || {};
+    return {
+        clickSlop: clampNumber(raw.clickSlop, 1, 400, 12),
+        minLength: clampNumber(raw.minLength, 20, 5000, 80),
+        maxDurationMs: clampNumber(raw.maxDurationMs, 200, 60000, 2500),
+        maxRules: clampNumber(raw.maxRules, 1, 64, 16),
+    };
+}
+
+function clampNumber(value, lower, upper, fallback) {
+    const number = Math.round(Number(value));
+    if (!Number.isFinite(number))
+        return fallback;
+    return Math.min(upper, Math.max(lower, number));
+}
+
+function spinRow(title, subtitle, value, lower, upper, step) {
+    return new Adw.SpinRow({
+        title,
+        subtitle,
+        adjustment: new Gtk.Adjustment({
+            lower,
+            upper,
+            step_increment: step,
+            page_increment: step * 2,
+            value,
+        }),
+        digits: 0,
+    });
+}
+
 function cloneRule(rule) {
     const copy = {...rule};
     if (Array.isArray(rule.points))
@@ -430,40 +558,45 @@ function sendReload() {
 
 function shapeOf(rule, triggerName) {
     if (hasWheel(rule))
-        return `按住${buttonPhrase(rule.hold || 'right')}，滚轮${wheelPhrase(rule.wheel)}`;
+        return t('shape.wheel', {hold: buttonPhrase(rule.hold || 'right'), direction: wheelPhrase(rule.wheel)});
     if (hasButton(rule))
-        return `按住${buttonPhrase(rule.hold || 'right')}，再按${buttonPhrase(rule.button)}`;
+        return t('shape.chord', {hold: buttonPhrase(rule.hold || 'right'), press: buttonPhrase(rule.button)});
     const trigger = buttonPhrase(triggerName || 'right');
     if (Array.isArray(rule.points) && rule.points.length >= 2)
-        return `按住${trigger}画的轨迹`;
+        return t('shape.drawn', {trigger});
     if (rule.direction)
-        return `按住${trigger}${directionPhrase(rule.direction)}`;
-    return '还没设置动作';
+        return t('shape.direction', {trigger, direction: directionPhrase(rule.direction)});
+    return t('shape.unset');
 }
 
 function wheelPhrase(name) {
-    return {up: '向上', down: '向下', left: '向左', right: '向右'}[name] || name;
+    return phrase(`direction.${name}`, name);
 }
 
 function kindTag(rule) {
     if (hasWheel(rule))
-        return '滚轮';
-    return hasButton(rule) ? '组合' : '轨迹';
+        return t('kind.wheel');
+    return hasButton(rule) ? t('kind.chord') : t('kind.stroke');
 }
 
 function directionPhrase(name) {
-    return {up: '向上', down: '向下', left: '向左', right: '向右'}[name] || name;
+    return phrase(`direction.${name}`, name);
 }
 
 function buttonPhrase(name) {
-    return {left: '左键', right: '右键', middle: '中键', forward: '侧键前进', back: '侧键后退'}[name] || name;
+    return phrase(`button.${name}`, name);
+}
+
+function phrase(key, fallback) {
+    const text = t(key);
+    return text === key ? fallback : text;
 }
 
 function rowTitle(rule) {
     if (typeof rule.name === 'string' && rule.name.length > 0)
         return rule.name;
     const shortcut = labelOf(rule);
-    return shortcut === '未设置' ? '未完成' : shortcut;
+    return shortcut === t('rule.noShortcut') ? t('rule.untitled') : shortcut;
 }
 
 function rowSubtitle(rule, triggerName) {
@@ -488,7 +621,7 @@ function hasStroke(rule) {
 function checkGestures(text) {
     const bin = GLib.getenv('STROKELET_BIN');
     if (!bin)
-        return '找不到 strokelet，无法检查轨迹';
+        return t('editor.noCheck');
     try {
         const proc = Gio.Subprocess.new(
             [bin, 'check-gestures'],
@@ -497,7 +630,7 @@ function checkGestures(text) {
         const [, , stderr] = proc.communicate_utf8(text, null);
         if (proc.get_successful())
             return null;
-        return stderr || '规则无效';
+        return stderr || t('editor.invalid');
     } catch (error) {
         return `${error}`;
     }
@@ -507,7 +640,7 @@ function labelOf(rule) {
     if (rule.label)
         return rule.label;
     const names = [...(rule.modifiers ?? []), rule.key].filter(Boolean).map(prettyChordPart);
-    return names.length > 0 ? names.join('+') : '未设置';
+    return names.length > 0 ? names.join('+') : t('rule.noShortcut');
 }
 
 function prettyChordPart(name) {
@@ -565,7 +698,7 @@ function watchProcess(argv, onLine, onClose) {
                 const [line] = source.read_line_finish_utf8(result);
                 if (line === null) {
                     if (proc !== null)
-                        onClose('录制没有返回结果');
+                        onClose(t('editor.noResult'));
                     proc = null;
                     return;
                 }
@@ -573,7 +706,7 @@ function watchProcess(argv, onLine, onClose) {
                     pump();
             } catch {
                 if (proc !== null)
-                    onClose('录制中断');
+                    onClose(t('editor.interrupted'));
                 proc = null;
             }
         });
@@ -605,7 +738,7 @@ function strokePreview(rule) {
         const color = area.get_color();
         const pts = previewPoints(rule);
         if (!pts) {
-            const layout = area.create_pango_layout('画出后显示在这里');
+            const layout = area.create_pango_layout(t('editor.previewPlaceholder'));
             const [textWidth, textHeight] = layout.get_pixel_size();
             cr.setSourceRGBA(color.red, color.green, color.blue, 0.45);
             cr.moveTo((width - textWidth) / 2, (height - textHeight) / 2);
@@ -657,12 +790,12 @@ function modelOf(items) {
 function editRule(parent, rule, triggerName, done, isNew = false) {
     const draft = cloneRule(rule);
     const dialog = new Adw.Dialog({
-        title: isNew ? '新规则' : '编辑规则',
+        title: isNew ? t('editor.new') : t('editor.edit'),
         content_width: 480,
     });
     const toolbar = new Adw.ToolbarView();
     const header = new Adw.HeaderBar();
-    const apply = new Gtk.Button({label: '完成', css_classes: ['suggested-action']});
+    const apply = new Gtk.Button({label: t('action.done'), css_classes: ['suggested-action']});
     header.pack_end(apply);
     toolbar.add_top_bar(header);
     const banner = new Adw.Banner({revealed: false});
@@ -670,8 +803,8 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
 
     const page = new Adw.PreferencesPage();
     const actionGroup = new Adw.PreferencesGroup({
-        title: '怎么触发',
-        description: '只选一种。画轨迹用窗口里的触发键。鼠标组合和滚轮以你先按下的键为准。',
+        title: t('editor.how'),
+        description: t('editor.howDescription'),
     });
     const strokeRadio = new Gtk.CheckButton({
         active: !hasButton(draft) && !hasWheel(draft),
@@ -687,15 +820,15 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
         active: hasWheel(draft),
         valign: Gtk.Align.CENTER,
     });
-    const strokeRow = new Adw.ActionRow({title: '画出轨迹', activatable_widget: strokeRadio});
+    const strokeRow = new Adw.ActionRow({title: t('editor.draw'), activatable_widget: strokeRadio});
     const drawButton = new Gtk.Button({valign: Gtk.Align.CENTER});
     strokeRow.add_prefix(strokeRadio);
     strokeRow.add_suffix(drawButton);
-    const chordRow = new Adw.ActionRow({title: '鼠标组合', activatable_widget: chordRadio});
+    const chordRow = new Adw.ActionRow({title: t('editor.chord'), activatable_widget: chordRadio});
     const chordButton = new Gtk.Button({valign: Gtk.Align.CENTER});
     chordRow.add_prefix(chordRadio);
     chordRow.add_suffix(chordButton);
-    const wheelRow = new Adw.ActionRow({title: '按住再滚轮', activatable_widget: wheelRadio});
+    const wheelRow = new Adw.ActionRow({title: t('editor.wheel'), activatable_widget: wheelRadio});
     const wheelButton = new Gtk.Button({valign: Gtk.Align.CENTER});
     wheelRow.add_prefix(wheelRadio);
     wheelRow.add_suffix(wheelButton);
@@ -705,8 +838,8 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
     page.add(actionGroup);
 
     const previewGroup = new Adw.PreferencesGroup({
-        title: '轨迹预览',
-        description: '小点是起点，大点是松开的地方。',
+        title: t('editor.preview'),
+        description: t('editor.previewReady'),
     });
     const preview = strokePreview(draft);
     const previewBox = new Gtk.Box({
@@ -720,15 +853,15 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
     page.add(previewGroup);
 
     const resultGroup = new Adw.PreferencesGroup({
-        title: '然后做什么',
-        description: '录快捷键时键盘会暂时独占，系统不会先把这组键吃掉。',
+        title: t('editor.then'),
+        description: t('editor.thenDescription'),
     });
-    const shortcutRow = new Adw.ActionRow({title: '快捷键'});
+    const shortcutRow = new Adw.ActionRow({title: t('editor.shortcut')});
     const shortcutButton = new Gtk.Button({valign: Gtk.Align.CENTER});
     shortcutRow.add_suffix(shortcutButton);
     shortcutRow.activatable_widget = shortcutButton;
     const nameRow = new Adw.EntryRow({
-        title: '屏幕上显示',
+        title: t('editor.screenName'),
         text: typeof draft.name === 'string' ? draft.name : '',
         max_length: 16,
         show_apply_button: false,
@@ -736,8 +869,8 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
     resultGroup.add(shortcutRow);
     page.add(resultGroup);
     const nameGroup = new Adw.PreferencesGroup({
-        title: '屏幕提示',
-        description: '留空则不显示。识别成功后出现大约一秒。位置在「显示」里选。',
+        title: t('editor.nameGroup'),
+        description: t('editor.nameDescription'),
     });
     nameGroup.add(nameRow);
     page.add(nameGroup);
@@ -763,30 +896,30 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
         wheelRadio.sensitive = !busy;
     };
     const showStatus = (message, cancellable) => {
-        banner.title = message || '';
-        banner.button_label = cancellable ? '取消' : '';
+        banner.title = translateDaemon(languageCode, message || '');
+        banner.button_label = cancellable ? t('action.cancel') : '';
         banner.revealed = Boolean(message);
     };
     const refreshEditor = () => {
         const trigger = buttonPhrase(triggerName);
         strokeRow.subtitle = hasStroke(draft)
             ? shapeOf(draft, triggerName)
-            : `按住${trigger}，在屏幕上画一笔后松开`;
+            : t('editor.drawEmpty', {trigger});
         chordRow.subtitle = hasButton(draft)
             ? shapeOf(draft, triggerName)
-            : '先按住一个键，再按另一个';
+            : t('editor.chordEmpty');
         wheelRow.subtitle = hasWheel(draft)
             ? shapeOf(draft, triggerName)
-            : '先按住一个键，再滚一下滚轮';
-        drawButton.label = hasStroke(draft) ? '重录' : '录制';
-        chordButton.label = hasButton(draft) ? '重录' : '录制';
-        wheelButton.label = hasWheel(draft) ? '重录' : '录制';
-        shortcutRow.subtitle = hasChord(draft) ? labelOf(draft) : '还没录';
-        shortcutButton.label = hasChord(draft) ? '重录' : '录制';
+            : t('editor.wheelEmpty');
+        drawButton.label = hasStroke(draft) ? t('action.rerecord') : t('action.record');
+        chordButton.label = hasButton(draft) ? t('action.rerecord') : t('action.record');
+        wheelButton.label = hasWheel(draft) ? t('action.rerecord') : t('action.record');
+        shortcutRow.subtitle = hasChord(draft) ? labelOf(draft) : t('editor.shortcutEmpty');
+        shortcutButton.label = hasChord(draft) ? t('action.rerecord') : t('action.record');
         previewGroup.visible = strokeRadio.active;
         previewGroup.description = previewPoints(draft)
-            ? '小点是起点，大点是松开的地方。'
-            : '画出之后，轨迹会显示在这里。';
+            ? t('editor.previewReady')
+            : t('editor.previewEmpty');
         preview.queue_draw();
     };
     refreshEditor();
@@ -800,7 +933,7 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
         if (keyval === 0xff1b) {
             stopRecording();
             setRecording(false);
-            showStatus('已取消', false);
+            showStatus(t('editor.cancelled'), false);
             refreshEditor();
             return true;
         }
@@ -809,14 +942,14 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
     banner.connect('button-clicked', () => {
         stopRecording();
         setRecording(false);
-        showStatus('已取消', false);
+        showStatus(t('editor.cancelled'), false);
         refreshEditor();
     });
     const begin = (argv, onLine) => {
         stopRecording();
         const current = session;
         if (!bin) {
-            showStatus('找不到 strokelet', false);
+            showStatus(t('editor.noBinary'), false);
             refreshEditor();
             return;
         }
@@ -844,7 +977,7 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
     };
     drawButton.connect('clicked', () => {
         strokeRadio.active = true;
-        showStatus(`按住${buttonPhrase(triggerName)}画出轨迹，然后松开。`, true);
+        showStatus(t('editor.drawPrompt', {trigger: buttonPhrase(triggerName)}), true);
         begin(['capture-stroke', triggerName], line => readMessage(line, msg => {
             if (msg.type === 'stroke') {
                 delete draft.direction;
@@ -853,7 +986,7 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
                 delete draft.wheel;
                 draft.points = msg.points;
                 setRecording(false);
-                showStatus('轨迹已记下。点完成后才会写进这条规则。', false);
+                showStatus(t('editor.drawSaved'), false);
                 refreshEditor();
                 return false;
             }
@@ -862,14 +995,14 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
                 return true;
             }
             setRecording(false);
-            showStatus(msg.message || '这次没有保存', false);
+            showStatus(translateDaemon(languageCode, msg.message) || t('editor.notSaved'), false);
             refreshEditor();
             return false;
         }));
     });
     chordButton.connect('clicked', () => {
         chordRadio.active = true;
-        showStatus('先按住起始键，再按另一个。左键、右键、中键或侧键都可以。', true);
+        showStatus(t('editor.chordPrompt'), true);
         begin(['capture-button', triggerName], line => readMessage(line, msg => {
             if (msg.type === 'button') {
                 delete draft.direction;
@@ -878,7 +1011,7 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
                 draft.hold = msg.hold;
                 draft.button = msg.button;
                 setRecording(false);
-                showStatus('鼠标组合已记下。点完成后才会写进这条规则。', false);
+                showStatus(t('editor.chordSaved'), false);
                 refreshEditor();
                 return false;
             }
@@ -887,14 +1020,14 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
                 return true;
             }
             setRecording(false);
-            showStatus(msg.message || '这次没有保存', false);
+            showStatus(translateDaemon(languageCode, msg.message) || t('editor.notSaved'), false);
             refreshEditor();
             return false;
         }));
     });
     wheelButton.connect('clicked', () => {
         wheelRadio.active = true;
-        showStatus('先按住一个鼠标键，再滚一下滚轮。向上、向下或左右都可以。', true);
+        showStatus(t('editor.wheelPrompt'), true);
         begin(['capture-wheel'], line => readMessage(line, msg => {
             if (msg.type === 'wheel') {
                 delete draft.direction;
@@ -903,7 +1036,7 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
                 draft.hold = msg.hold;
                 draft.wheel = msg.wheel;
                 setRecording(false);
-                showStatus('滚轮动作已记下。点完成后才会写进这条规则。', false);
+                showStatus(t('editor.wheelSaved'), false);
                 refreshEditor();
                 return false;
             }
@@ -912,17 +1045,17 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
                 return true;
             }
             setRecording(false);
-            showStatus(msg.message || '这次没有保存', false);
+            showStatus(translateDaemon(languageCode, msg.message) || t('editor.notSaved'), false);
             refreshEditor();
             return false;
         }));
     });
     shortcutButton.connect('clicked', () => {
-        showStatus('键盘已暂时独占。按下快捷键，松开主键后记下。', true);
+        showStatus(t('editor.shortcutPrompt'), true);
         begin(['capture-chord'], line => readMessage(line, msg => {
             if (msg.type === 'live') {
-                shortcutButton.label = msg.label || '正在听…';
-                showStatus(msg.label ? `正在听：${msg.label}` : '正在听…', true);
+                shortcutButton.label = msg.label || t('editor.listeningPlain');
+                showStatus(msg.label ? t('editor.listening', {label: msg.label}) : t('editor.listeningPlain'), true);
                 return true;
             }
             if (msg.type === 'chord') {
@@ -932,12 +1065,12 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
                 draft.keyCode = msg.keyCode;
                 draft.label = msg.label;
                 setRecording(false);
-                showStatus('快捷键已记下。点完成后才会写进这条规则。', false);
+                showStatus(t('editor.shortcutSaved'), false);
                 refreshEditor();
                 return false;
             }
             setRecording(false);
-            showStatus(msg.message || '这次没有保存', false);
+            showStatus(translateDaemon(languageCode, msg.message) || t('editor.notSaved'), false);
             refreshEditor();
             return false;
         }));
@@ -947,7 +1080,7 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
     apply.connect('clicked', () => {
         if (strokeRadio.active) {
             if (!hasStroke(draft)) {
-                showStatus('先画出轨迹，或改选另一种动作。', false);
+                showStatus(t('editor.needStroke'), false);
                 return;
             }
             delete draft.button;
@@ -955,14 +1088,14 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
             delete draft.wheel;
         } else if (chordRadio.active) {
             if (!hasButton(draft)) {
-                showStatus('先按下两个鼠标键，或改选另一种动作。', false);
+                showStatus(t('editor.needChord'), false);
                 return;
             }
             delete draft.direction;
             delete draft.points;
             delete draft.wheel;
         } else if (!hasWheel(draft)) {
-            showStatus('先按住鼠标键并滚动滚轮，或改选另一种动作。', false);
+            showStatus(t('editor.needWheel'), false);
             return;
         } else {
             delete draft.direction;
@@ -970,12 +1103,12 @@ function editRule(parent, rule, triggerName, done, isNew = false) {
             delete draft.button;
         }
         if (!hasChord(draft)) {
-            showStatus('再录一组快捷键。', false);
+            showStatus(t('editor.needShortcut'), false);
             return;
         }
         const screenName = nameRow.text.trim();
         if ([...screenName].length > 16) {
-            showStatus('屏幕名称最多 16 个字。', false);
+            showStatus(t('editor.nameTooLong'), false);
             return;
         }
         if (screenName)

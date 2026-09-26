@@ -1298,6 +1298,7 @@ fn reply_sample(sample: &mut Option<SampleWait>, value: &serde_json::Value) {
 }
 
 fn apply_rules(processor: &mut FrameProcessor, rules: &GestureConfig) {
+    processor.set_limits(rules.limits);
     processor.set_trigger(rules.trigger.evdev_code());
     processor.set_button_chords(&rules.button_chords());
     processor.set_wheel_rules(&rules.wheel_chords());

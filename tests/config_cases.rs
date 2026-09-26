@@ -89,6 +89,51 @@ fn screen_name_is_optional_and_trimmed() {
 }
 
 #[test]
+fn missing_recognition_keeps_the_defaults() {
+    let config = parse_config(
+        r#"{
+        "version": 1,
+        "trigger": "right",
+        "rules": [{"direction": "up", "modifiers": ["ctrl"], "key": "c"}]
+    }"#,
+    )
+    .unwrap();
+    assert_eq!(config.limits.click_slop_counts, 12.0);
+    assert_eq!(config.limits.min_up_counts, 80.0);
+    assert_eq!(config.limits.max_duration_ms, 2500);
+    assert_eq!(config.max_rules, 16);
+}
+
+#[test]
+fn recognition_rejects_a_stroke_shorter_than_a_click() {
+    assert!(
+        parse_config(
+            r#"{
+        "version": 1,
+        "trigger": "right",
+        "recognition": {"clickSlop": 100, "minLength": 80, "maxDurationMs": 2500, "maxRules": 16},
+        "rules": []
+    }"#
+        )
+        .is_err()
+    );
+    assert!(
+        parse_config(
+            r#"{
+        "version": 1,
+        "trigger": "right",
+        "recognition": {"clickSlop": 12, "minLength": 80, "maxDurationMs": 2500, "maxRules": 1},
+        "rules": [
+            {"direction": "up", "modifiers": ["ctrl"], "key": "c"},
+            {"direction": "down", "modifiers": ["ctrl"], "key": "v"}
+        ]
+    }"#
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn saved_file_loads_back() {
     let path = std::env::temp_dir().join(format!("strokelet-config-{}.json", std::process::id()));
     let config = GestureConfig::builtin_default();

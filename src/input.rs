@@ -236,6 +236,11 @@ impl FrameProcessor {
         self.tracking
     }
 
+    pub fn set_limits(&mut self, limits: crate::Limits) {
+        self.click_slop = limits.click_slop_counts;
+        self.gesture.set_limits(limits);
+    }
+
     pub fn set_trigger(&mut self, code: u16) {
         if code != self.trigger_code && self.tracking {
             self.gesture.abandon();

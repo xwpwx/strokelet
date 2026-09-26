@@ -36,7 +36,7 @@ pub use server::{
     peer_is_target, peer_uid, validate_runtime_path,
 };
 pub use session::{SessionFacts, is_active_unlocked, session_state};
-pub use stroke::{MAX_RULES, best_match, conflicts, straight_points};
+pub use stroke::{ABSOLUTE_MAX_RULES, MAX_RULES, best_match, conflicts, straight_points};
 
 pub fn status_message() -> &'static str {
     "strokelet: demo"

@@ -4,6 +4,7 @@ pub const SAMPLE_COUNT: usize = 32;
 pub const MATCH_DISTANCE: f64 = 0.20;
 pub const MATCH_MARGIN: f64 = 0.07;
 pub const MAX_RULES: usize = 16;
+pub const ABSOLUTE_MAX_RULES: usize = 64;
 
 pub fn straight_points(direction: Direction) -> Vec<(f64, f64)> {
     match direction {
