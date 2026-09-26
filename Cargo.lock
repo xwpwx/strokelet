@@ -177,7 +177,7 @@ dependencies = [
 
 [[package]]
 name = "strokelet"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "evdev",
  "nix 0.31.3",

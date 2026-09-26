@@ -12,7 +12,7 @@ Build the package from this repo, then install it:
 
 ```sh
 scripts/build-deb.sh
-sudo apt install ./dist/strokelet_0.1.2_amd64.deb
+sudo apt install ./dist/strokelet_0.1.3_amd64.deb
 ```
 
 Log out once and back in. After that, Strokelet takes the mouse at each login. Open Settings from the mark in the top bar, or launch Strokelet from the app list, to change rules.

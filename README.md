@@ -12,7 +12,7 @@
 
 ```sh
 scripts/build-deb.sh
-sudo apt install ./dist/strokelet_0.1.2_amd64.deb
+sudo apt install ./dist/strokelet_0.1.3_amd64.deb
 ```
 
 装好后注销一次再登录。之后每次登录都会接管鼠标。点右上角那一笔标记，选「设置」，或者从应用列表打开「Strokelet」，都可以改规则。
